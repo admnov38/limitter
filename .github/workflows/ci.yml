@@ -1,0 +1,27 @@
+name: macOS checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: swift --version
+      - name: Core tests
+        run: swift test -c release
+      - name: Build app bundle
+        run: ./scripts/build.sh
+      - name: Isolated connector checks
+        run: python3 scripts/test-connector.py dist/Limitter.app/Contents/MacOS/Limitter
+      - name: Verify ad-hoc signature
+        run: codesign --verify --deep --strict dist/Limitter.app

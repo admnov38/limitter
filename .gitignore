@@ -1,0 +1,25 @@
+# Swift and local build products
+.build/
+.swiftpm/
+DerivedData/
+dist/
+
+# Local diagnostics and rendered development previews
+artifacts/
+*.log
+
+# macOS and editor state
+.DS_Store
+xcuserdata/
+*.xcuserstate
+.idea/
+.vscode/
+
+# Local configuration and signing material
+.env
+.env.*
+!.env.example
+*.p12
+*.p8
+*.mobileprovision
+*.provisionprofile
