@@ -103,12 +103,13 @@ struct TokenChart: View {
     var body: some View {
         let stride = axisStride
         Chart {
-            ForEach(providers) { provider in
-                ForEach(days) { day in
-                    if style == .histogram {
-                        BarMark(xStart: .value("Start", day.date), xEnd: .value("End", barEnd(day.date)), y: .value("Tokens", day.tokens(for: provider)))
-                            .foregroundStyle(by: .value("Provider", provider.title)).opacity(0.9).cornerRadius(days.count > 48 ? 0 : 2)
-                    } else {
+            if style == .histogram {
+                ForEach(barSegments) { segment in
+                    barMark(segment)
+                }
+            } else {
+                ForEach(providers) { provider in
+                    ForEach(days) { day in
                         AreaMark(x: .value("Time", day.date), y: .value("Tokens", day.tokens(for: provider)), stacking: .unstacked)
                             .foregroundStyle(by: .value("Provider", provider.title)).opacity(0.10).interpolationMethod(.monotone)
                         LineMark(x: .value("Time", day.date), y: .value("Tokens", day.tokens(for: provider)), series: .value("Provider", provider.title))
@@ -156,9 +157,43 @@ struct TokenChart: View {
             }
         }.accessibilityLabel((style == .histogram ? "Histogram" : "Line chart") + " of " + interval.rawValue.lowercased() + " token buckets for " + providers.map(\.title).joined(separator: " and "))
     }
-    private func barEnd(_ start: Date) -> Date {
+    private func barMark(_ segment: StackSegment) -> some ChartContent {
+        BarMark(
+            x: PlottableValue.value("Time", segment.start..<segment.end),
+            yStart: PlottableValue.value("Tokens", segment.y0),
+            yEnd: PlottableValue.value("Tokens", segment.y1)
+        )
+        .foregroundStyle(Theme.accent(segment.provider))
+    }
+    private struct StackSegment: Identifiable {
+        var id: String
+        var start: Date
+        var end: Date
+        var provider: Provider
+        var y0: Double
+        var y1: Double
+    }
+    private var barSegments: [StackSegment] {
+        let gap = days.count > 48 ? 0.08 : 0.2
+        return days.flatMap { day in
+            let bounds = barBounds(day.date, gap: gap)
+            var base = 0.0
+            var segments: [StackSegment] = []
+            for provider in providers {
+                let value = Double(day.tokens(for: provider))
+                if value > 0 {
+                    segments.append(StackSegment(id: provider.rawValue + "-" + String(day.date.timeIntervalSinceReferenceDate), start: bounds.start, end: bounds.end, provider: provider, y0: base, y1: base + value))
+                }
+                base += value
+            }
+            return segments
+        }
+    }
+    private func barBounds(_ start: Date, gap: Double) -> (start: Date, end: Date) {
         let next = calendar.date(byAdding: .minute, value: interval.minutes, to: start) ?? start.addingTimeInterval(Double(interval.minutes) * 60)
-        return start.addingTimeInterval(max(1, next.timeIntervalSince(start)) * 0.84)
+        let span = max(1, next.timeIntervalSince(start))
+        let inset = span * gap / 2
+        return (start.addingTimeInterval(inset), start.addingTimeInterval(span - inset))
     }
     private var axisFormat: Date.FormatStyle {
         let span = (days.last?.date ?? Date()).timeIntervalSince(days.first?.date ?? Date())
