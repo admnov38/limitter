@@ -195,6 +195,8 @@ final class UsageStore: ObservableObject {
     var overviewCounts: (sessions: Int, requests: Int) { history.activityCounts(dayCount: 1, providers: providers) }
     var overviewCost: Double { providers.reduce(0) { $0 + cost(for: $1, days: 1).total } }
     var overviewHours: [UsageDay] { history.todayHours(providers: providers) }
+    var overviewSeries: [UsageDay] { history.chartBuckets(interval: preferences.overviewInterval, dayCount: 1, providers: providers) }
+    var activitySeries: [UsageDay] { history.chartBuckets(interval: preferences.activityInterval, dayCount: preferences.chartPeriod.days, providers: providers) }
     var activityUsage: TokenUsage { history.total(dayCount: preferences.tokenPeriod.days, providers: providers) }
     var activityCounts: (sessions: Int, requests: Int) { history.activityCounts(dayCount: preferences.tokenPeriod.days, providers: providers) }
     var activityDays: [UsageDay] {
@@ -271,17 +273,7 @@ final class UsageStore: ObservableObject {
             SessionSummary(provider: .claude, session: "demo-claude", project: "design-system", model: "claude-fable-5-1", startedAt: now.addingTimeInterval(-7200), lastActivity: now.addingTimeInterval(-2400), observedState: .idle, usage: .init(input: 19400, output: 11200, cached: 97000), responses: 28),
             SessionSummary(provider: .grok, session: "demo-grok", project: "launchpad", model: "grok-4.6", startedAt: now.addingTimeInterval(-3600), lastActivity: now.addingTimeInterval(-1800), observedState: .idle, usage: .init(input: 24600, output: 15200, cached: 126000), responses: 38)
         ]
-        // Sample hourly values sum to the exact daily totals, just like indexed real history.
         sample.buildIndex(now: now, calendar: calendar)
-        let hour = calendar.dateInterval(of: .hour, for: now)!.start
-        let prior = calendar.date(byAdding: .hour, value: -1, to: hour)!
-        for provider in Provider.allCases {
-            let usage = sample.today[provider]!
-            if prior >= calendar.startOfDay(for: now) {
-                let half = TokenUsage(input: usage.input / 2, output: usage.output / 2, cached: usage.cached / 2, cacheWrite: usage.cacheWrite / 2)
-                sample.index?.hourly[provider] = [prior: half, hour: TokenUsage(input: usage.input - half.input, output: usage.output - half.output, cached: usage.cached - half.cached, cacheWrite: usage.cacheWrite - half.cacheWrite)]
-            } else { sample.index?.hourly[provider] = [hour: usage] }
-        }
         heatmaps = Self.makeHeatmaps(sample)
         history = sample
         var c = ProviderLimits(provider: .codex, source: "Preview data"); c.plan = "Pro"; c.updatedAt = now; c.resetCredits = 2

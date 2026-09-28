@@ -62,46 +62,84 @@ struct SessionCard: View {
 struct TokenChart: View {
     let days: [UsageDay]
     let providers: [Provider]
-    var intraday = false
+    var style = ChartStyle.line
+    var interval = ChartInterval.day
     @State private var selectedDate: Date?
+    private var calendar: Calendar { .current }
     private var selectedDay: UsageDay? {
         guard let selectedDate else { return nil }
+        if style == .histogram { return days.last(where: { $0.date <= selectedDate }) ?? days.first }
         return days.min { abs($0.date.timeIntervalSince(selectedDate)) < abs($1.date.timeIntervalSince(selectedDate)) }
     }
+    private var singleDay: Bool {
+        guard let first = days.first?.date, let last = days.last?.date else { return true }
+        return calendar.isDate(first, inSameDayAs: last)
+    }
+    private var yPeak: Double {
+        let peak = style == .histogram
+            ? days.map { day in providers.reduce(0) { $0 + day.tokens(for: $1) } }.max() ?? 0
+            : days.map { day in providers.map { day.tokens(for: $0) }.max() ?? 0 }.max() ?? 0
+        return max(1, Double(peak) * 1.2)
+    }
+    private var xDomain: ClosedRange<Date> {
+        let first = days.first?.date ?? Date()
+        let last = days.last?.date ?? first
+        if interval.minutes < 1_440, singleDay {
+            let start = calendar.startOfDay(for: first)
+            return start...(calendar.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86_400))
+        }
+        if style == .histogram {
+            let end = calendar.date(byAdding: .minute, value: interval.minutes, to: last) ?? last.addingTimeInterval(1)
+            return first...(end > first ? end : first.addingTimeInterval(1))
+        }
+        return first...(last > first ? last : first.addingTimeInterval(1))
+    }
+    private var axisStride: (component: Calendar.Component, count: Int) {
+        if interval == .day { return (.day, max(1, days.count / 7)) }
+        let span = (days.last?.date ?? Date()).timeIntervalSince(days.first?.date ?? Date())
+        if span > 26 * 3_600 { return (.day, max(1, Int(span / 86_400) / 7)) }
+        return (.hour, 4)
+    }
     var body: some View {
+        let stride = axisStride
         Chart {
             ForEach(providers) { provider in
                 ForEach(days) { day in
-                    AreaMark(x: .value("Day", day.date), y: .value("Tokens", day.tokens(for: provider)), stacking: .unstacked)
-                        .foregroundStyle(by: .value("Provider", provider.title)).opacity(0.10).interpolationMethod(.monotone)
-                    LineMark(x: .value("Day", day.date), y: .value("Tokens", day.tokens(for: provider)), series: .value("Provider", provider.title))
-                        .foregroundStyle(by: .value("Provider", provider.title)).lineStyle(StrokeStyle(lineWidth: 2)).interpolationMethod(.monotone)
-                    if day.id == days.last?.id {
-                        PointMark(x: .value("Day", day.date), y: .value("Tokens", day.tokens(for: provider)))
-                            .foregroundStyle(by: .value("Provider", provider.title)).symbolSize(22)
+                    if style == .histogram {
+                        BarMark(xStart: .value("Start", day.date), xEnd: .value("End", barEnd(day.date)), y: .value("Tokens", day.tokens(for: provider)))
+                            .foregroundStyle(by: .value("Provider", provider.title)).opacity(0.9).cornerRadius(days.count > 48 ? 0 : 2)
+                    } else {
+                        AreaMark(x: .value("Time", day.date), y: .value("Tokens", day.tokens(for: provider)), stacking: .unstacked)
+                            .foregroundStyle(by: .value("Provider", provider.title)).opacity(0.10).interpolationMethod(.monotone)
+                        LineMark(x: .value("Time", day.date), y: .value("Tokens", day.tokens(for: provider)), series: .value("Provider", provider.title))
+                            .foregroundStyle(by: .value("Provider", provider.title)).lineStyle(StrokeStyle(lineWidth: 2)).interpolationMethod(.monotone)
+                        if day.id == days.last?.id {
+                            PointMark(x: .value("Time", day.date), y: .value("Tokens", day.tokens(for: provider)))
+                                .foregroundStyle(by: .value("Provider", provider.title)).symbolSize(22)
+                        }
                     }
                 }
             }
             if let day = selectedDay {
-                RuleMark(x: .value("Day", day.date)).foregroundStyle(Theme.text.opacity(0.25)).lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                RuleMark(x: .value("Time", day.date)).foregroundStyle(Theme.text.opacity(0.25)).lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
                     .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
                         HStack(spacing: 8) {
-                            Text(day.date, format: intraday ? .dateTime.hour().minute() : .dateTime.month(.abbreviated).day()).foregroundStyle(Theme.muted)
+                            Text(day.date, format: tooltipFormat).foregroundStyle(Theme.muted)
                             ForEach(providers) { provider in Text(provider.title + " " + Format.compact(day.tokens(for: provider))).foregroundStyle(Theme.accent(provider)) }
                         }.font(.system(size: 9, weight: .medium)).padding(6).background(Theme.surface, in: RoundedRectangle(cornerRadius: 5))
                     }
             }
         }
         .chartForegroundStyleScale(["Codex": Theme.mint, "Claude": Theme.orange, "Grok": Theme.blue]).chartLegend(.hidden)
-        .chartYScale(domain: 0...max(1, Double(days.flatMap { day in providers.map { day.tokens(for: $0) } }.max() ?? 1) * 1.2))
-        .chartXAxis { AxisMarks(values: .stride(by: intraday ? .hour : .day, count: intraday ? 4 : max(1, days.count / 7))) { value in
-            AxisValueLabel { if let date = value.as(Date.self) { Text(date, format: intraday ? .dateTime.hour() : days.count <= 7 ? .dateTime.weekday(.abbreviated) : .dateTime.day()).font(.system(size: 9)).foregroundStyle(Theme.muted) } }
+        .chartYScale(domain: 0...yPeak)
+        .chartXAxis { AxisMarks(values: .stride(by: stride.component, count: max(1, stride.count))) { value in
+            AxisValueLabel { if let date = value.as(Date.self) { Text(date, format: axisFormat).font(.system(size: 9)).foregroundStyle(Theme.muted) } }
         } }
         .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { value in
             AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [3, 4])).foregroundStyle(Theme.line)
             AxisValueLabel { if let value = value.as(Double.self) { Text(Format.compact(Int(value))).font(.system(size: 8)).foregroundStyle(Theme.muted) } }
         } }
-        .chartXScale(domain: (days.first?.date ?? Date())...(intraday ? Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: days.first?.date ?? Date()))! : days.last?.date ?? Date().addingTimeInterval(1)))
+        .chartXScale(domain: xDomain)
         .chartXSelection(value: $selectedDate)
         .chartOverlay { proxy in
             GeometryReader { geometry in
@@ -116,7 +154,21 @@ struct TokenChart: View {
                     }
                 }
             }
-        }.accessibilityLabel((intraday ? "Today’s hourly token lines for " : "Daily token lines for ") + providers.map(\.title).joined(separator: " and "))
+        }.accessibilityLabel((style == .histogram ? "Histogram" : "Line chart") + " of " + interval.rawValue.lowercased() + " token buckets for " + providers.map(\.title).joined(separator: " and "))
+    }
+    private func barEnd(_ start: Date) -> Date {
+        let next = calendar.date(byAdding: .minute, value: interval.minutes, to: start) ?? start.addingTimeInterval(Double(interval.minutes) * 60)
+        return start.addingTimeInterval(max(1, next.timeIntervalSince(start)) * 0.84)
+    }
+    private var axisFormat: Date.FormatStyle {
+        let span = (days.last?.date ?? Date()).timeIntervalSince(days.first?.date ?? Date())
+        if interval == .day { return days.count <= 7 ? .dateTime.weekday(.abbreviated) : .dateTime.day() }
+        if span > 26 * 3_600 { return span <= 8 * 86_400 ? .dateTime.weekday(.abbreviated) : .dateTime.day() }
+        return .dateTime.hour()
+    }
+    private var tooltipFormat: Date.FormatStyle {
+        if interval == .day { return .dateTime.month(.abbreviated).day() }
+        return singleDay ? .dateTime.hour().minute() : .dateTime.month(.abbreviated).day().hour().minute()
     }
 }
 
@@ -228,7 +280,7 @@ struct CostsDashboard: View {
                 HStack(alignment: .top, spacing: 12) {
                     ForEach(store.providers) { provider in providerCost(provider) }
                 }
-                ModelCostTable(estimate: store.apiEstimate)
+                ModelCostTable(estimate: store.apiEstimate, order: $store.preferences.modelOrder)
                 VStack(alignment: .leading, spacing: 14) {
                     HStack { eyebrow("THE ASSUMPTIONS"); Spacer(); Button("Edit rates ↗") { store.settingsSection = .pricing; store.openSettings() }.font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.mint) }
                     Text("Recorded models uses the model on each response, including switches within a session. Single benchmark applies your selected rates to all tokens. Unknown models remain unpriced in recorded mode. Estimates use standard short-context rates and exclude tools, long-context premiums, service tiers, regional multipliers, and tax.").font(.system(size: 11)).foregroundStyle(Theme.muted).lineSpacing(4)
@@ -286,11 +338,26 @@ struct CostsDashboard: View {
 
 struct ModelCostTable: View {
     let estimate: PriceEstimate
+    @Binding var order: ModelOrder
+    private var rows: [ModelCost] { estimate.ordered(by: order) }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack { eyebrow("MODEL BREAKDOWN"); Spacer(); Text("TOKENS").frame(width: 90, alignment: .trailing); Text("API VALUE").frame(width: 90, alignment: .trailing) }.font(.system(size: 9, weight: .medium)).foregroundStyle(Theme.muted)
-            if estimate.rows.isEmpty { Text("Model usage appears here as local responses are recorded.").font(.system(size: 11)).foregroundStyle(Theme.muted) }
-            ForEach(estimate.rows) { row in
+            HStack {
+                eyebrow("MODEL BREAKDOWN")
+                Spacer()
+                Menu {
+                    Picker("Order", selection: $order) {
+                        ForEach(ModelOrder.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }.pickerStyle(.inline)
+                } label: {
+                    HStack(spacing: 4) { Text("Order"); Text(order.rawValue).foregroundStyle(Theme.text); Image(systemName: "chevron.down").font(.system(size: 7)) }
+                        .font(.system(size: 10)).foregroundStyle(Theme.muted)
+                }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Order models by tokens used or by API value.").accessibilityLabel("Model order")
+                Text("TOKENS").frame(width: 90, alignment: .trailing).foregroundStyle(order == .tokens ? Theme.text : Theme.muted)
+                Text("API VALUE").frame(width: 90, alignment: .trailing).foregroundStyle(order == .apiValue ? Theme.text : Theme.muted)
+            }.font(.system(size: 9, weight: .medium)).foregroundStyle(Theme.muted)
+            if rows.isEmpty { Text("Model usage appears here as local responses are recorded.").font(.system(size: 11)).foregroundStyle(Theme.muted) }
+            ForEach(rows) { row in
                 HStack(spacing: 9) {
                     ProviderMark(provider: row.provider).frame(width: 23, height: 23)
                     Text(row.title).font(.system(size: 11, weight: .medium)).lineLimit(1).help(row.model)

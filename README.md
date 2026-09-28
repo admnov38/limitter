@@ -12,8 +12,8 @@ Built with SwiftUI, AppKit, and Swift Charts, with no third-party package depend
 
 - **Menu bar usage:** choose providers, session or weekly limits, used or remaining percentages, and token totals.
 - **Provider dashboard:** quota meters, reset countdowns, and model-specific limits when reported by the provider.
-- **Local activity:** token charts, an activity heatmap, recent sessions, and per-model usage across available local logs.
-- **API cost estimates:** estimate the USD API equivalent of recorded tokens, with a model breakdown and an optional custom benchmark.
+- **Local activity:** token lines or histograms with adjustable buckets, an activity heatmap, recent sessions, and per-model usage across available local logs.
+- **API cost estimates:** estimate the USD API equivalent of recorded tokens, with a model breakdown you can sort by tokens or API value, and an optional custom benchmark.
 - **Native controls:** dark, light, or system appearance; a pinnable dashboard; and launch at login.
 - **Explicit data states:** unavailable and expired readings stay visible as such; stale Claude fallback readings are marked as last known.
 

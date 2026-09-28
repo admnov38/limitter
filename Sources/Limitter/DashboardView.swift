@@ -76,7 +76,7 @@ struct DashboardView: View {
         }.overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
     private var greeting: some View {
-        let message = WelcomeMessage(activity: store.activity, providers: store.providers, limits: store.limits, playful: store.preferences.playfulCadence)
+        let message = WelcomeMessage(activity: store.activity, providers: store.providers, limits: store.limits, playful: store.preferences.playfulCadence, tokens: store.historyAvailable ? store.overviewUsage.total : 0)
         return HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(message.title).font(.system(size: 24, weight: .semibold, design: .rounded)).tracking(-0.7)
@@ -125,30 +125,70 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 eyebrow("TODAY’S TOKEN FLOW")
-                ForEach(store.providers) { provider in
-                    HStack(spacing: 4) { Circle().fill(Theme.accent(provider)).frame(width: 5, height: 5); Text(provider.title) }.font(.system(size: 9)).foregroundStyle(Theme.muted)
-                }
-                Spacer()
-                Text("HOURLY · TODAY").font(.system(size: 9, weight: .medium)).foregroundStyle(Theme.muted)
+                providerLegend
+                Spacer(minLength: 8)
+                chartOptions(dayCount: 1, showsRange: false)
             }
-            TokenChart(days: store.overviewHours, providers: store.providers, intraday: true).frame(height: 100)
+            TokenChart(days: store.overviewSeries, providers: store.providers, style: store.preferences.chartStyle, interval: store.preferences.overviewInterval.resolved(for: 1)).frame(height: 100)
         }.padding(14).card()
     }
     private var activityCard: some View {
         VStack(alignment: .leading, spacing: 13) {
             HStack(alignment: .firstTextBaseline) {
                 eyebrow("TOKEN FLOW")
-                ForEach(store.providers) { provider in
-                    HStack(spacing: 4) { Circle().fill(Theme.accent(provider)).frame(width: 5, height: 5); Text(provider.title) }.font(.system(size: 9)).foregroundStyle(Theme.muted)
-                }
-                Spacer()
-                Menu {
-                    ForEach(ChartPeriod.allCases, id: \.self) { period in Button(period.rawValue) { store.preferences.chartPeriod = period } }
-                } label: { HStack(spacing: 5) { Text(store.preferences.chartPeriod.rawValue); Image(systemName: "chevron.down").font(.system(size: 7)) }.font(.system(size: 10)).foregroundStyle(Theme.muted) }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                providerLegend
+                Spacer(minLength: 8)
+                chartOptions(dayCount: store.preferences.chartPeriod.days, showsRange: true)
             }
-            TokenChart(days: store.activityDays, providers: store.providers).frame(height: 110)
+            TokenChart(days: store.activitySeries, providers: store.providers, style: store.preferences.chartStyle, interval: store.preferences.activityInterval.resolved(for: store.preferences.chartPeriod.days)).frame(height: 110)
         }.padding(16).card()
+    }
+    private var providerLegend: some View {
+        ForEach(store.providers) { provider in
+            HStack(spacing: 4) { Circle().fill(Theme.accent(provider)).frame(width: 5, height: 5); Text(provider.title) }.font(.system(size: 9)).foregroundStyle(Theme.muted)
+        }
+    }
+    private func intervalBinding(dayCount: Int) -> Binding<ChartInterval> {
+        Binding(
+            get: {
+                let stored = dayCount <= 1 ? store.preferences.overviewInterval : store.preferences.activityInterval
+                return stored.resolved(for: dayCount)
+            },
+            set: { value in
+                if dayCount <= 1 { store.preferences.overviewInterval = value }
+                else { store.preferences.activityInterval = value }
+            }
+        )
+    }
+    private func chartOptions(dayCount: Int, showsRange: Bool) -> some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 2) {
+                chartStyleButton("chart.line.uptrend.xyaxis", style: .line, label: "Line")
+                chartStyleButton("chart.bar.fill", style: .histogram, label: "Histogram")
+            }.padding(2).background(Theme.text.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
+            chartMenu("Chart interval", selection: intervalBinding(dayCount: dayCount), help: "Bucket size. A 7-day chart can be hourly or daily.") {
+                ForEach(ChartInterval.options(dayCount: dayCount), id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            if showsRange {
+                chartMenu("Chart range", selection: $store.preferences.chartPeriod, help: "Days included in the activity chart.") {
+                    ForEach(ChartPeriod.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+            }
+        }
+    }
+    private func chartStyleButton(_ symbol: String, style: ChartStyle, label: String) -> some View {
+        let active = store.preferences.chartStyle == style
+        return Button { store.preferences.chartStyle = style } label: {
+            Image(systemName: symbol).font(.system(size: 11, weight: .medium)).foregroundStyle(active ? Theme.mint : Theme.muted)
+                .frame(width: 26, height: 22).background(active ? Theme.mint.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 6))
+        }.help(label).accessibilityLabel(label).accessibilityAddTraits(active ? .isSelected : [])
+    }
+    private func chartMenu<Selection: Hashable, Content: View>(_ label: String, selection: Binding<Selection>, help: String, @ViewBuilder content: () -> Content) -> some View where Selection: RawRepresentable, Selection.RawValue == String {
+        Menu {
+            Picker(label, selection: selection) { content() }.pickerStyle(.inline)
+        } label: {
+            HStack(spacing: 5) { Text(selection.wrappedValue.rawValue); Image(systemName: "chevron.down").font(.system(size: 7)) }.font(.system(size: 10)).foregroundStyle(Theme.muted)
+        }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help(help).accessibilityLabel(label)
     }
     @ViewBuilder private var activity: some View {
         HStack {

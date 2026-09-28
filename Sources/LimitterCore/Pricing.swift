@@ -75,12 +75,28 @@ public struct PriceEstimate: Sendable {
             rows.append(row); totalTokens += tokens.total
             if let value = row.cost { cost = cost + value } else { unpricedTokens += tokens.total }
         }
-        rows.sort { ($0.cost?.total ?? -1) == ($1.cost?.total ?? -1) ? $0.model < $1.model : ($0.cost?.total ?? -1) > ($1.cost?.total ?? -1) }
+        rows.sort(by: ModelOrder.apiValue.precedes)
     }
+    public func ordered(by order: ModelOrder) -> [ModelCost] { rows.sorted(by: order.precedes) }
     public static func + (lhs: Self, rhs: Self) -> Self {
         var result = Self(); result.rows = lhs.rows + rhs.rows; result.cost = lhs.cost + rhs.cost
         result.totalTokens = lhs.totalTokens + rhs.totalTokens; result.unpricedTokens = lhs.unpricedTokens + rhs.unpricedTokens
         return result
+    }
+}
+
+extension ModelOrder {
+    public func precedes(_ lhs: ModelCost, _ rhs: ModelCost) -> Bool {
+        switch self {
+        case .tokens:
+            if lhs.usage.total != rhs.usage.total { return lhs.usage.total > rhs.usage.total }
+        case .apiValue:
+            let left = lhs.cost?.total ?? -1, right = rhs.cost?.total ?? -1
+            if left != right { return left > right }
+            if lhs.usage.total != rhs.usage.total { return lhs.usage.total > rhs.usage.total }
+        }
+        if lhs.model != rhs.model { return lhs.model < rhs.model }
+        return lhs.provider.rawValue < rhs.provider.rawValue
     }
 }
 

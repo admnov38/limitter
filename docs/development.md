@@ -31,7 +31,7 @@ dist/Limitter.app/Contents/MacOS/Limitter --diagnose-grok
 
 ## UI checks and previews
 
-`--verify-ui` checks native settings-window launch, close, and reopen behavior; live appearance changes; the actual status-button readout; icon fallback; provider filtering; independent Codex/Claude/Grok and Activity/API Value timeframes; today-only Overview totals and hourly flow; current-session selection; API estimates; and 84-day history. It uses sample data and does not save preferences. It does not simulate physical mouse movement or menu selection.
+`--verify-ui` checks native settings-window launch, close, and reopen behavior; live appearance changes; the actual status-button readout; icon fallback; provider filtering; independent Codex/Claude/Grok and Activity/API Value timeframes; today-only Overview totals; line and histogram buckets on Overview and Activity; API Value model ordering; the daily note; current-session selection; API estimates; and 84-day history. It uses sample data and does not save preferences. It does not simulate physical mouse movement or menu selection.
 
 ```sh
 dist/Limitter.app/Contents/MacOS/Limitter --verify-ui

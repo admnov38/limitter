@@ -302,7 +302,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         store.preferences.chartPeriod = .month
         require(store.overviewUsage.total == todayTokens && store.preferences.apiTokenPeriod == .week, "Activity controls must not affect Overview or API Value")
         require(store.activityUsage.total > 301800 && store.activityDays.count == 30, "Timeframes must change totals and chart data")
-        print("Native UI checks passed: launch, close, reopen, live theme, menu readout, icon fallback, hidden providers, Grok integration, independent page/provider periods, today-only Overview, current session, mixed Opus/Fable pricing, Fable weekly cap, and 84-day activity. No preferences were saved.")
+        require(store.activitySeries.count == 30, "Daily activity buckets follow the 30-day chart")
+        store.preferences.chartPeriod = .week
+        store.preferences.activityInterval = .day
+        require(store.activitySeries.count == 7, "A 7-day chart has one bucket per day")
+        let weekTokens = store.activitySeries.reduce(0) { $0 + $1.tokens(for: nil) }
+        store.preferences.activityInterval = .hour
+        store.preferences.chartStyle = .histogram
+        require(store.activitySeries.count > 24 && store.activitySeries.reduce(0) { $0 + $1.tokens(for: nil) } == weekTokens, "Hourly buckets over 7 days must total the same tokens as daily buckets")
+        let overviewTokens = store.overviewSeries.reduce(0) { $0 + $1.tokens(for: nil) }
+        require(store.overviewSeries.map(\.date) == store.overviewHours.map(\.date) && overviewTokens == store.overviewHours.reduce(0) { $0 + $1.tokens(for: nil) }, "Overview defaults to today’s hours")
+        store.preferences.overviewInterval = .minutes15
+        require(store.overviewSeries.allSatisfy { Calendar.current.isDateInToday($0.date) }, "Finer overview buckets stay on today")
+        require(store.overviewSeries.reduce(0) { $0 + $1.tokens(for: nil) } == overviewTokens, "Overview intervals must keep the same daily tokens")
+        let byTokens = store.apiEstimate.ordered(by: .tokens)
+        let byValue = store.apiEstimate.ordered(by: .apiValue)
+        require(zip(byTokens, byTokens.dropFirst()).allSatisfy { $0.usage.total >= $1.usage.total }, "Models can be ordered by tokens used")
+        require(zip(byValue, byValue.dropFirst()).allSatisfy { ($0.cost?.total ?? -1) >= ($1.cost?.total ?? -1) }, "Models can be ordered by API value")
+        let playful = WelcomeMessage(activity: store.activity, providers: store.providers, limits: store.limits, playful: true, tokens: store.overviewUsage.total)
+        let factual = WelcomeMessage(activity: store.activity, providers: store.providers, limits: store.limits, playful: false, tokens: store.overviewUsage.total)
+        require(!playful.title.isEmpty && !playful.detail.isEmpty && factual.title != playful.title, "The daily note needs a playful voice and a factual one")
+        print("Native UI checks passed: launch, close, reopen, live theme, menu readout, icon fallback, hidden providers, Grok integration, independent page/provider periods, today-only Overview, histogram buckets, model ordering, daily notes, current session, mixed Opus/Fable pricing, Fable weekly cap, and 84-day activity. No preferences were saved.")
         NSApp.terminate(nil)
     }
     func applicationWillTerminate(_ notification: Notification) {
