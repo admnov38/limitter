@@ -15,7 +15,7 @@ bundle="$PWD/dist/Limitter.app"
 revision=$(git rev-parse HEAD)
 /usr/libexec/PlistBuddy -c "Add :LimitterSourceRevision string $revision" "$bundle/Contents/Info.plist"
 codesign --force --deep --sign - "$bundle"
-lipo -verify_arch arm64 x86_64 "$bundle/Contents/MacOS/Limitter"
+lipo "$bundle/Contents/MacOS/Limitter" -verify_arch arm64 x86_64
 codesign --verify --deep --strict "$bundle"
 archive="$PWD/dist/Limitter-macOS-universal.zip"
 ditto -c -k --sequesterRsrc --keepParent "$bundle" "$archive"
@@ -23,7 +23,7 @@ verification_dir=$(mktemp -d)
 trap 'rm -rf "$verification_dir"' EXIT
 ditto -x -k "$archive" "$verification_dir"
 codesign --verify --deep --strict "$verification_dir/Limitter.app"
-lipo -verify_arch arm64 x86_64 "$verification_dir/Limitter.app/Contents/MacOS/Limitter"
+lipo "$verification_dir/Limitter.app/Contents/MacOS/Limitter" -verify_arch arm64 x86_64
 (
     cd dist
     shasum -a 256 Limitter-macOS-universal.zip > SHA256SUMS.txt
