@@ -27,6 +27,19 @@ hypothetical token costs, not subscription charges or invoices.
 
 *Sample data. The final week includes only dates through today.*
 
+## Download
+
+[Download Limitter for macOS](https://github.com/admnov38/limitter/releases/latest/download/Limitter-macOS-universal.zip)
+
+Requires macOS 14 or later; the same app supports Apple Silicon and Intel Macs.
+Unzip the download and move **Limitter.app** to **Applications**. Quit an older
+copy before opening the new version. Version details and SHA-256 checksums are
+available on the [releases page](https://github.com/admnov38/limitter/releases/latest).
+
+The app is ad-hoc signed, not Apple Developer ID-signed or notarized. macOS may
+block the first launch. If you trust this download, use **System Settings →
+Privacy & Security → Open Anyway** after attempting to open it.
+
 ## Build and run
 
 Requires **macOS 14 or later** and a **Swift 5.10 or newer toolchain** with the macOS
@@ -123,6 +136,6 @@ screenshot generation, and release checks.
 
 ## Project status
 
-The current source release is **1.4.1**. Limitter is an independent project and is
+The current source release is **1.4.2**. Limitter is an independent project and is
 not affiliated with OpenAI, Anthropic, or xAI. Provider compatibility depends on
 the installed CLI version and the account data it exposes.

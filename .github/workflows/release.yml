@@ -1,0 +1,35 @@
+name: macOS release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Core tests
+        run: swift test -c release
+      - name: Build and verify universal app archive
+        run: ./scripts/package-release.sh "$GITHUB_REF_NAME"
+      - name: Isolated connector checks
+        run: python3 scripts/test-connector.py dist/Limitter.app/Contents/MacOS/Limitter
+      - name: Publish app and checksum
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            dist/Limitter-macOS-universal.zip dist/SHA256SUMS.txt \
+            --verify-tag --title "Limitter ${GITHUB_REF_NAME#v}" \
+            --notes-file docs/release-notes.md --generate-notes

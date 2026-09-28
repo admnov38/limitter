@@ -26,7 +26,7 @@ struct SettingsWindowView: View {
                 Spacer()
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 6) { Circle().fill(store.refreshing ? Theme.orange : Theme.mint).frame(width: 5, height: 5); Text(store.refreshing ? "Syncing your usage" : "Running in your menu bar") }.font(.system(size: 10)).foregroundStyle(Theme.muted)
-                    HStack { Text("LIMITTER / 1.4.1").font(.system(size: 9, design: .monospaced)).tracking(0.8); Spacer(); Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }.help("Quit Limitter") }.foregroundStyle(Theme.muted.opacity(0.75))
+                    HStack { Text("LIMITTER / \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development")").font(.system(size: 9, design: .monospaced)).tracking(0.8); Spacer(); Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }.help("Quit Limitter") }.foregroundStyle(Theme.muted.opacity(0.75))
                 }.padding(23)
             }.frame(width: 204).background(Theme.surface.opacity(0.55))
             Rectangle().fill(Theme.line).frame(width: 1)
