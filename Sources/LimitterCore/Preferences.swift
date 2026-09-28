@@ -35,6 +35,48 @@ public enum ChartPeriod: String, CaseIterable, Codable, Sendable {
     case week = "7 days", fortnight = "14 days", month = "30 days"
     public var days: Int { self == .week ? 7 : self == .fortnight ? 14 : 30 }
 }
+public enum ChartStyle: String, CaseIterable, Codable, Sendable {
+    case line = "Line", histogram = "Histogram"
+}
+public enum ChartInterval: String, CaseIterable, Codable, Sendable {
+    case minutes15 = "15 min", minutes30 = "30 min", hour = "Hourly", hours3 = "3 hours", hours6 = "6 hours", hours12 = "12 hours", day = "Daily"
+    public var minutes: Int {
+        switch self {
+        case .minutes15: return 15
+        case .minutes30: return 30
+        case .hour: return 60
+        case .hours3: return 180
+        case .hours6: return 360
+        case .hours12: return 720
+        case .day: return 1_440
+        }
+    }
+    /// Buckets that stay readable: at least two columns, and at most a week of hours.
+    public static func options(dayCount: Int) -> [ChartInterval] {
+        let window = max(1, dayCount) * 1_440
+        let available = allCases.filter { interval in
+            let buckets = window / interval.minutes
+            return buckets >= 2 && buckets <= 7 * 24
+        }
+        return available.isEmpty ? [.day] : available
+    }
+    public func resolved(for dayCount: Int) -> ChartInterval {
+        let available = Self.options(dayCount: dayCount)
+        if available.contains(self) { return self }
+        return available.min { abs($0.minutes - minutes) < abs($1.minutes - minutes) } ?? .day
+    }
+    public static func floor(_ date: Date, minutes: Int, calendar: Calendar) -> Date {
+        if minutes >= 1_440 { return calendar.startOfDay(for: date) }
+        let day = calendar.startOfDay(for: date)
+        let parts = calendar.dateComponents([.hour, .minute], from: date)
+        let minuteOfDay = (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
+        let step = max(1, minutes)
+        return calendar.date(byAdding: .minute, value: minuteOfDay - minuteOfDay % step, to: day) ?? day
+    }
+}
+public enum ModelOrder: String, CaseIterable, Codable, Sendable {
+    case tokens = "Tokens", apiValue = "API value"
+}
 public enum VisibleWindows: String, CaseIterable, Codable, Sendable {
     case all = "All windows", session = "Session only", weekly = "Weekly only"
     public func matches(_ window: LimitWindow) -> Bool {
@@ -66,6 +108,10 @@ public struct AppPreferences: Codable, Equatable, Sendable {
     public var tokenPeriod = TokenPeriod.today
     public var apiTokenPeriod = TokenPeriod.today
     public var chartPeriod = ChartPeriod.week
+    public var chartStyle = ChartStyle.line
+    public var overviewInterval = ChartInterval.hour
+    public var activityInterval = ChartInterval.day
+    public var modelOrder = ModelOrder.apiValue
     public var pricingMode = PricingMode.recordedModels
     public var showCosts = true
     public var showHeatmap = true
@@ -95,7 +141,7 @@ public struct AppPreferences: Codable, Equatable, Sendable {
     public func rates(for provider: Provider) -> APIRates {
         switch provider { case .codex: return codexRates; case .claude: return claudeRates; case .grok: return grokRates }
     }
-    private enum CodingKeys: String, CodingKey { case pricingMode, showGrok, grokRates, grokTokenPeriod, theme, showSettingsOnLaunch, hoverToOpen, showMenuUsage, showMenuIcon, showProviderLabels, menuProviders, menuMetric, menuQuotaPeriod, menuTokenPeriod, showCodex, showClaude, showLimits, showTokenSummary, showChart, showBreakdown, showResetTimes, showAdditionalLimits, visibleWindows, tokenPeriod, apiTokenPeriod, chartPeriod, showCosts, showHeatmap, showCurrentSession, playfulCadence, codexRates, claudeRates, codexQuotaPeriod, claudeQuotaPeriod, codexTokenPeriod, claudeTokenPeriod }
+    private enum CodingKeys: String, CodingKey { case pricingMode, showGrok, grokRates, grokTokenPeriod, theme, showSettingsOnLaunch, hoverToOpen, showMenuUsage, showMenuIcon, showProviderLabels, menuProviders, menuMetric, menuQuotaPeriod, menuTokenPeriod, showCodex, showClaude, showLimits, showTokenSummary, showChart, showBreakdown, showResetTimes, showAdditionalLimits, visibleWindows, tokenPeriod, apiTokenPeriod, chartPeriod, chartStyle, overviewInterval, activityInterval, modelOrder, showCosts, showHeatmap, showCurrentSession, playfulCadence, codexRates, claudeRates, codexQuotaPeriod, claudeQuotaPeriod, codexTokenPeriod, claudeTokenPeriod }
     public init(from decoder: Decoder) throws {
         self.init()
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -122,6 +168,10 @@ public struct AppPreferences: Codable, Equatable, Sendable {
         tokenPeriod = try values.decodeIfPresent(type(of: tokenPeriod), forKey: .tokenPeriod) ?? tokenPeriod
         apiTokenPeriod = try values.decodeIfPresent(TokenPeriod.self, forKey: .apiTokenPeriod) ?? tokenPeriod
         chartPeriod = try values.decodeIfPresent(type(of: chartPeriod), forKey: .chartPeriod) ?? chartPeriod
+        chartStyle = try values.decodeIfPresent(type(of: chartStyle), forKey: .chartStyle) ?? chartStyle
+        overviewInterval = try values.decodeIfPresent(type(of: overviewInterval), forKey: .overviewInterval) ?? overviewInterval
+        activityInterval = try values.decodeIfPresent(type(of: activityInterval), forKey: .activityInterval) ?? activityInterval
+        modelOrder = try values.decodeIfPresent(type(of: modelOrder), forKey: .modelOrder) ?? modelOrder
         showCosts = try values.decodeIfPresent(type(of: showCosts), forKey: .showCosts) ?? showCosts
         showHeatmap = try values.decodeIfPresent(type(of: showHeatmap), forKey: .showHeatmap) ?? showHeatmap
         showCurrentSession = try values.decodeIfPresent(type(of: showCurrentSession), forKey: .showCurrentSession) ?? showCurrentSession

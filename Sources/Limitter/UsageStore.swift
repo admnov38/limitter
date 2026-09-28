@@ -95,7 +95,7 @@ final class UsageStore: ObservableObject {
         refreshing = true
         let fetchAccount = force || Date().timeIntervalSince(lastAccountRefresh) >= 120
         Task {
-            async let newHistory = reader.read(dayCount: 84)
+            async let newHistory = reader.read(dayCount: HeatmapLayout.historyDayCount())
             if fetchAccount {
                 async let claudeResult = Task.detached(priority: .utility) { () -> Result<ProviderLimits, Error> in
                     Result { try ClaudeUsageConnection().fetch() }
@@ -195,6 +195,8 @@ final class UsageStore: ObservableObject {
     var overviewCounts: (sessions: Int, requests: Int) { history.activityCounts(dayCount: 1, providers: providers) }
     var overviewCost: Double { providers.reduce(0) { $0 + cost(for: $1, days: 1).total } }
     var overviewHours: [UsageDay] { history.todayHours(providers: providers) }
+    var overviewSeries: [UsageDay] { history.chartBuckets(interval: preferences.overviewInterval, dayCount: 1, providers: providers) }
+    var activitySeries: [UsageDay] { history.chartBuckets(interval: preferences.activityInterval, dayCount: preferences.chartPeriod.days, providers: providers) }
     var activityUsage: TokenUsage { history.total(dayCount: preferences.tokenPeriod.days, providers: providers) }
     var activityCounts: (sessions: Int, requests: Int) { history.activityCounts(dayCount: preferences.tokenPeriod.days, providers: providers) }
     var activityDays: [UsageDay] {
@@ -236,25 +238,26 @@ final class UsageStore: ObservableObject {
         var sample = HistorySnapshot()
         let codex = [245000, 410000, 295000, 530000, 380000, 715000, 482600]
         let claude = [180000, 230000, 320000, 210000, 460000, 345000, 301800]
-        sample.days = (0..<84).map { index in
-            var day = UsageDay(date: calendar.date(byAdding: .day, value: index - 83, to: calendar.startOfDay(for: now))!)
+        let dayCount = HeatmapLayout.historyDayCount(now: now, calendar: calendar)
+        sample.days = (0..<dayCount).map { index in
+            var day = UsageDay(date: calendar.date(byAdding: .day, value: index - (dayCount - 1), to: calendar.startOfDay(for: now))!)
             func tokens(_ count: Int) -> TokenUsage { TokenUsage(input: count / 5, output: count / 10, cached: count - count / 5 - count / 10) }
             let valueIndex = (index + 5) % 7
-            let quiet = index < 80 && (index % 13 == 0 || index % 13 == 1)
+            let quiet = index < dayCount - 4 && (index % 13 == 0 || index % 13 == 1)
             let scale = 0.35 + Double((index * 7) % 11) / 10
             day.codex = tokens(quiet ? 0 : Int(Double(codex[valueIndex]) * scale))
             day.claude = tokens(quiet ? 0 : Int(Double(claude[valueIndex]) * scale))
             day.grok = tokens(quiet ? 0 : Int(Double(claude[(valueIndex + 2) % 7]) * scale * 0.65)); return day
         }
         sample.today = [.codex: TokenUsage(input: 98200, output: 42400, cached: 342000), .claude: TokenUsage(input: 55200, output: 26600, cached: 208000, cacheWrite: 12000), .grok: TokenUsage(input: 24600, output: 15200, cached: 126000)]
-        sample.days[83].codex = sample.today[.codex]!
-        sample.days[83].claude = sample.today[.claude]!
-        sample.days[83].grok = sample.today[.grok]!
+        sample.days[dayCount - 1].codex = sample.today[.codex]!
+        sample.days[dayCount - 1].claude = sample.today[.claude]!
+        sample.days[dayCount - 1].grok = sample.today[.grok]!
         sample.sessions = [.codex: 8, .claude: 5, .grok: 3]; sample.requests = [.codex: 142, .claude: 86, .grok: 38]; sample.available = Set(Provider.allCases)
         for provider in Provider.allCases {
             for (dayIndex, day) in sample.days.enumerated() {
                 let total = day.tokens(for: provider)
-                let count = dayIndex == 83 ? (sample.requests[provider] ?? 0) : total / 4000
+                let count = dayIndex == dayCount - 1 ? (sample.requests[provider] ?? 0) : total / 4000
                 for index in 0..<count {
                     let id = "\(provider.rawValue)-\(dayIndex)-\(index)"
                     let session = "\(dayIndex)-\(index % (sample.sessions[provider] ?? 1))"
@@ -262,7 +265,7 @@ final class UsageStore: ObservableObject {
                     func share(_ value: Int) -> Int { value / count + (index < value % count ? 1 : 0) }
                     let usage = TokenUsage(input: share(totalUsage.input), output: share(totalUsage.output), cached: share(totalUsage.cached), cacheWrite: share(totalUsage.cacheWrite))
                     let model = provider == .codex ? "gpt-6-astra" : provider == .grok ? "grok-4.6" : ["claude-opus-5", "claude-opus-4-8", "claude-fable-5", "claude-fable-5-1"][index % 4]
-                    sample.records[provider, default: []].append(UsageRecord(id: id, session: session, date: day.date.addingTimeInterval(Double(index) / Double(max(1, count)) * (dayIndex == 83 ? max(0, now.timeIntervalSince(day.date) - 10) : 80000)), usage: usage, model: model))
+                    sample.records[provider, default: []].append(UsageRecord(id: id, session: session, date: day.date.addingTimeInterval(Double(index) / Double(max(1, count)) * (dayIndex == dayCount - 1 ? max(0, now.timeIntervalSince(day.date) - 10) : 80000)), usage: usage, model: model))
                 }
             }
         }
@@ -271,17 +274,7 @@ final class UsageStore: ObservableObject {
             SessionSummary(provider: .claude, session: "demo-claude", project: "design-system", model: "claude-fable-5-1", startedAt: now.addingTimeInterval(-7200), lastActivity: now.addingTimeInterval(-2400), observedState: .idle, usage: .init(input: 19400, output: 11200, cached: 97000), responses: 28),
             SessionSummary(provider: .grok, session: "demo-grok", project: "launchpad", model: "grok-4.6", startedAt: now.addingTimeInterval(-3600), lastActivity: now.addingTimeInterval(-1800), observedState: .idle, usage: .init(input: 24600, output: 15200, cached: 126000), responses: 38)
         ]
-        // Sample hourly values sum to the exact daily totals, just like indexed real history.
         sample.buildIndex(now: now, calendar: calendar)
-        let hour = calendar.dateInterval(of: .hour, for: now)!.start
-        let prior = calendar.date(byAdding: .hour, value: -1, to: hour)!
-        for provider in Provider.allCases {
-            let usage = sample.today[provider]!
-            if prior >= calendar.startOfDay(for: now) {
-                let half = TokenUsage(input: usage.input / 2, output: usage.output / 2, cached: usage.cached / 2, cacheWrite: usage.cacheWrite / 2)
-                sample.index?.hourly[provider] = [prior: half, hour: TokenUsage(input: usage.input - half.input, output: usage.output - half.output, cached: usage.cached - half.cached, cacheWrite: usage.cacheWrite - half.cacheWrite)]
-            } else { sample.index?.hourly[provider] = [hour: usage] }
-        }
         heatmaps = Self.makeHeatmaps(sample)
         history = sample
         var c = ProviderLimits(provider: .codex, source: "Preview data"); c.plan = "Pro"; c.updatedAt = now; c.resetCredits = 2

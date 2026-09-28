@@ -12,14 +12,20 @@ Built with SwiftUI, AppKit, and Swift Charts, with no third-party package depend
 
 - **Menu bar usage:** choose providers, session or weekly limits, used or remaining percentages, and token totals.
 - **Provider dashboard:** quota meters, reset countdowns, and model-specific limits when reported by the provider.
-- **Local activity:** token charts, an activity heatmap, recent sessions, and per-model usage across available local logs.
-- **API cost estimates:** estimate the USD API equivalent of recorded tokens, with a model breakdown and an optional custom benchmark.
+- **Local activity:** token lines or stacked histograms with adjustable time buckets, recent sessions, and per-model usage across available local logs.
+- **Daily commitment:** a 21-week activity grid fills the card with fixed-size square tiles, alongside current streak, best streak, and active-day counts. Hover or select a day to inspect responses and tokens.
+- **Daily notes:** optional playful messages reflect today’s activity, quota state, and streak; a factual mode is also available.
+- **API cost estimates:** estimate the USD API equivalent of recorded tokens, with a model breakdown you can sort by tokens or API value, and an optional custom benchmark.
 - **Native controls:** dark, light, or system appearance; a pinnable dashboard; and launch at login.
 - **Explicit data states:** unavailable and expired readings stay visible as such; stale Claude fallback readings are marked as last known.
 
 Account limits and local token totals measure different things: limits come from
 provider accounts, while activity comes from logs on this Mac. API estimates are
 hypothetical token costs, not subscription charges or invoices.
+
+![Limitter Activity dashboard showing the full-width 21-week grid](docs/images/activity.png)
+
+*Sample data. The final week includes only dates through today.*
 
 ## Build and run
 

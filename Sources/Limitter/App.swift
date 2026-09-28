@@ -270,10 +270,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         store.preferences.setTokenPeriod(.month, for: .grok)
         require(store.preferences.tokenPeriod(for: .codex) == .today && store.preferences.quotaPeriod(for: .claude) == .session, "Grok controls must preserve other provider periods")
         store.selectedProvider = .grok
-        require(store.overviewUsage.total == 165800 && store.currentSession?.provider == .grok && store.heatmap.days.count == 84, "Grok filtering must populate tokens, sessions, and heatmap")
+        require(store.overviewUsage.total == 165800 && store.currentSession?.provider == .grok && store.heatmap.days.count == HeatmapLayout.historyDayCount(), "Grok filtering must populate tokens, sessions, and heatmap")
         store.selectedProvider = nil
         require(store.currentSession?.state() == .running, "The current session should prefer a fresh running session")
-        require(store.apiCost > 0 && store.history.days.count == 84, "API equivalent and 12-week activity should be populated")
+        require(store.apiCost > 0 && store.history.days.count == HeatmapLayout.historyDayCount(), "API equivalent and the full activity grid should be populated")
         let claudePrice = store.estimate(for: .claude, days: 1)
         require(claudePrice.isComplete && claudePrice.rows.count == 4 && claudePrice.totalTokens == 301800, "Claude pricing must include both Opus and Fable versions without losing tokens")
         let fable = QuotaPresentation(provider: .claude, snapshot: store.limits[.claude], period: .weekly, bucketID: "model:fable")
@@ -302,7 +302,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         store.preferences.chartPeriod = .month
         require(store.overviewUsage.total == todayTokens && store.preferences.apiTokenPeriod == .week, "Activity controls must not affect Overview or API Value")
         require(store.activityUsage.total > 301800 && store.activityDays.count == 30, "Timeframes must change totals and chart data")
-        print("Native UI checks passed: launch, close, reopen, live theme, menu readout, icon fallback, hidden providers, Grok integration, independent page/provider periods, today-only Overview, current session, mixed Opus/Fable pricing, Fable weekly cap, and 84-day activity. No preferences were saved.")
+        require(store.activitySeries.count == 30, "Daily activity buckets follow the 30-day chart")
+        store.preferences.chartPeriod = .week
+        store.preferences.activityInterval = .day
+        require(store.activitySeries.count == 7, "A 7-day chart has one bucket per day")
+        let weekTokens = store.activitySeries.reduce(0) { $0 + $1.tokens(for: nil) }
+        store.preferences.activityInterval = .hour
+        store.preferences.chartStyle = .histogram
+        require(store.activitySeries.count > 24 && store.activitySeries.reduce(0) { $0 + $1.tokens(for: nil) } == weekTokens, "Hourly buckets over 7 days must total the same tokens as daily buckets")
+        let overviewTokens = store.overviewSeries.reduce(0) { $0 + $1.tokens(for: nil) }
+        require(store.overviewSeries.map(\.date) == store.overviewHours.map(\.date) && overviewTokens == store.overviewHours.reduce(0) { $0 + $1.tokens(for: nil) }, "Overview defaults to today’s hours")
+        store.preferences.overviewInterval = .minutes15
+        require(store.overviewSeries.allSatisfy { Calendar.current.isDateInToday($0.date) }, "Finer overview buckets stay on today")
+        require(store.overviewSeries.reduce(0) { $0 + $1.tokens(for: nil) } == overviewTokens, "Overview intervals must keep the same daily tokens")
+        let byTokens = store.apiEstimate.ordered(by: .tokens)
+        let byValue = store.apiEstimate.ordered(by: .apiValue)
+        require(zip(byTokens, byTokens.dropFirst()).allSatisfy { $0.usage.total >= $1.usage.total }, "Models can be ordered by tokens used")
+        require(zip(byValue, byValue.dropFirst()).allSatisfy { ($0.cost?.total ?? -1) >= ($1.cost?.total ?? -1) }, "Models can be ordered by API value")
+        let playful = WelcomeMessage(activity: store.activity, providers: store.providers, limits: store.limits, playful: true, tokens: store.overviewUsage.total)
+        let factual = WelcomeMessage(activity: store.activity, providers: store.providers, limits: store.limits, playful: false, tokens: store.overviewUsage.total)
+        require(!playful.title.isEmpty && !playful.detail.isEmpty && factual.title != playful.title, "The daily note needs a playful voice and a factual one")
+        print("Native UI checks passed: launch, close, reopen, live theme, menu readout, icon fallback, hidden providers, Grok integration, independent page/provider periods, today-only Overview, histogram buckets, model ordering, daily notes, current session, mixed Opus/Fable pricing, Fable weekly cap, and full-width activity history. No preferences were saved.")
         NSApp.terminate(nil)
     }
     func applicationWillTerminate(_ notification: Notification) {

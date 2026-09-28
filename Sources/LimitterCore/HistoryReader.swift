@@ -111,6 +111,8 @@ public enum TranscriptParser {
 }
 
 public actor HistoryReader {
+    /// Long enough for the activity grid to fill the dashboard without widening the tiles.
+    public static let maximumDayCount = 182
     private struct CachedFile { let size: Int; let modified: Date; let transcript: ParsedTranscript }
     private var cache: [String: CachedFile] = [:]
     private let roots: [Provider: [URL]]
@@ -124,7 +126,7 @@ public actor HistoryReader {
     public func read(now: Date = Date(), calendar: Calendar = .current, dayCount: Int = 7, providers: [Provider] = Provider.allCases) -> HistorySnapshot {
         var result = HistorySnapshot()
         let today = calendar.startOfDay(for: now)
-        let count = max(1, min(84, dayCount))
+        let count = max(1, min(Self.maximumDayCount, dayCount))
         let start = calendar.date(byAdding: .day, value: 1 - count, to: today)!
         result.days = (0..<count).map { UsageDay(date: calendar.date(byAdding: .day, value: $0, to: start)!) }
         var visited: Set<String> = []

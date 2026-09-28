@@ -62,46 +62,85 @@ struct SessionCard: View {
 struct TokenChart: View {
     let days: [UsageDay]
     let providers: [Provider]
-    var intraday = false
+    var style = ChartStyle.line
+    var interval = ChartInterval.day
     @State private var selectedDate: Date?
+    private var calendar: Calendar { .current }
     private var selectedDay: UsageDay? {
         guard let selectedDate else { return nil }
+        if style == .histogram { return days.last(where: { $0.date <= selectedDate }) ?? days.first }
         return days.min { abs($0.date.timeIntervalSince(selectedDate)) < abs($1.date.timeIntervalSince(selectedDate)) }
     }
+    private var singleDay: Bool {
+        guard let first = days.first?.date, let last = days.last?.date else { return true }
+        return calendar.isDate(first, inSameDayAs: last)
+    }
+    private var yPeak: Double {
+        let peak = style == .histogram
+            ? days.map { day in providers.reduce(0) { $0 + day.tokens(for: $1) } }.max() ?? 0
+            : days.map { day in providers.map { day.tokens(for: $0) }.max() ?? 0 }.max() ?? 0
+        return max(1, Double(peak) * 1.2)
+    }
+    private var xDomain: ClosedRange<Date> {
+        let first = days.first?.date ?? Date()
+        let last = days.last?.date ?? first
+        if interval.minutes < 1_440, singleDay {
+            let start = calendar.startOfDay(for: first)
+            return start...(calendar.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86_400))
+        }
+        if style == .histogram {
+            let end = calendar.date(byAdding: .minute, value: interval.minutes, to: last) ?? last.addingTimeInterval(1)
+            return first...(end > first ? end : first.addingTimeInterval(1))
+        }
+        return first...(last > first ? last : first.addingTimeInterval(1))
+    }
+    private var axisStride: (component: Calendar.Component, count: Int) {
+        if interval == .day { return (.day, max(1, days.count / 7)) }
+        let span = (days.last?.date ?? Date()).timeIntervalSince(days.first?.date ?? Date())
+        if span > 26 * 3_600 { return (.day, max(1, Int(span / 86_400) / 7)) }
+        return (.hour, 4)
+    }
     var body: some View {
+        let stride = axisStride
         Chart {
-            ForEach(providers) { provider in
-                ForEach(days) { day in
-                    AreaMark(x: .value("Day", day.date), y: .value("Tokens", day.tokens(for: provider)), stacking: .unstacked)
-                        .foregroundStyle(by: .value("Provider", provider.title)).opacity(0.10).interpolationMethod(.monotone)
-                    LineMark(x: .value("Day", day.date), y: .value("Tokens", day.tokens(for: provider)), series: .value("Provider", provider.title))
-                        .foregroundStyle(by: .value("Provider", provider.title)).lineStyle(StrokeStyle(lineWidth: 2)).interpolationMethod(.monotone)
-                    if day.id == days.last?.id {
-                        PointMark(x: .value("Day", day.date), y: .value("Tokens", day.tokens(for: provider)))
-                            .foregroundStyle(by: .value("Provider", provider.title)).symbolSize(22)
+            if style == .histogram {
+                ForEach(barSegments) { segment in
+                    barMark(segment)
+                }
+            } else {
+                ForEach(providers) { provider in
+                    ForEach(days) { day in
+                        AreaMark(x: .value("Time", day.date), y: .value("Tokens", day.tokens(for: provider)), stacking: .unstacked)
+                            .foregroundStyle(by: .value("Provider", provider.title)).opacity(0.10).interpolationMethod(.monotone)
+                        LineMark(x: .value("Time", day.date), y: .value("Tokens", day.tokens(for: provider)), series: .value("Provider", provider.title))
+                            .foregroundStyle(by: .value("Provider", provider.title)).lineStyle(StrokeStyle(lineWidth: 2)).interpolationMethod(.monotone)
+                        if day.id == days.last?.id {
+                            PointMark(x: .value("Time", day.date), y: .value("Tokens", day.tokens(for: provider)))
+                                .foregroundStyle(by: .value("Provider", provider.title)).symbolSize(22)
+                        }
                     }
                 }
             }
             if let day = selectedDay {
-                RuleMark(x: .value("Day", day.date)).foregroundStyle(Theme.text.opacity(0.25)).lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                RuleMark(x: .value("Time", day.date)).foregroundStyle(Theme.text.opacity(0.25)).lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
                     .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
                         HStack(spacing: 8) {
-                            Text(day.date, format: intraday ? .dateTime.hour().minute() : .dateTime.month(.abbreviated).day()).foregroundStyle(Theme.muted)
+                            Text(day.date, format: tooltipFormat).foregroundStyle(Theme.muted)
                             ForEach(providers) { provider in Text(provider.title + " " + Format.compact(day.tokens(for: provider))).foregroundStyle(Theme.accent(provider)) }
                         }.font(.system(size: 9, weight: .medium)).padding(6).background(Theme.surface, in: RoundedRectangle(cornerRadius: 5))
                     }
             }
         }
         .chartForegroundStyleScale(["Codex": Theme.mint, "Claude": Theme.orange, "Grok": Theme.blue]).chartLegend(.hidden)
-        .chartYScale(domain: 0...max(1, Double(days.flatMap { day in providers.map { day.tokens(for: $0) } }.max() ?? 1) * 1.2))
-        .chartXAxis { AxisMarks(values: .stride(by: intraday ? .hour : .day, count: intraday ? 4 : max(1, days.count / 7))) { value in
-            AxisValueLabel { if let date = value.as(Date.self) { Text(date, format: intraday ? .dateTime.hour() : days.count <= 7 ? .dateTime.weekday(.abbreviated) : .dateTime.day()).font(.system(size: 9)).foregroundStyle(Theme.muted) } }
+        .chartYScale(domain: 0...yPeak)
+        .chartXAxis { AxisMarks(values: .stride(by: stride.component, count: max(1, stride.count))) { value in
+            AxisValueLabel { if let date = value.as(Date.self) { Text(date, format: axisFormat).font(.system(size: 9)).foregroundStyle(Theme.muted) } }
         } }
         .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { value in
             AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [3, 4])).foregroundStyle(Theme.line)
             AxisValueLabel { if let value = value.as(Double.self) { Text(Format.compact(Int(value))).font(.system(size: 8)).foregroundStyle(Theme.muted) } }
         } }
-        .chartXScale(domain: (days.first?.date ?? Date())...(intraday ? Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: days.first?.date ?? Date()))! : days.last?.date ?? Date().addingTimeInterval(1)))
+        .chartXScale(domain: xDomain)
         .chartXSelection(value: $selectedDate)
         .chartOverlay { proxy in
             GeometryReader { geometry in
@@ -116,7 +155,78 @@ struct TokenChart: View {
                     }
                 }
             }
-        }.accessibilityLabel((intraday ? "Today’s hourly token lines for " : "Daily token lines for ") + providers.map(\.title).joined(separator: " and "))
+        }.accessibilityLabel((style == .histogram ? "Histogram" : "Line chart") + " of " + interval.rawValue.lowercased() + " token buckets for " + providers.map(\.title).joined(separator: " and "))
+    }
+    private func barMark(_ segment: StackSegment) -> some ChartContent {
+        BarMark(
+            x: PlottableValue.value("Time", segment.start..<segment.end),
+            yStart: PlottableValue.value("Tokens", segment.y0),
+            yEnd: PlottableValue.value("Tokens", segment.y1)
+        )
+        .foregroundStyle(Theme.accent(segment.provider))
+    }
+    private struct StackSegment: Identifiable {
+        var id: String
+        var start: Date
+        var end: Date
+        var provider: Provider
+        var y0: Double
+        var y1: Double
+    }
+    private var barSegments: [StackSegment] {
+        let gap = days.count > 48 ? 0.08 : 0.2
+        return days.flatMap { day in
+            let bounds = barBounds(day.date, gap: gap)
+            var base = 0.0
+            var segments: [StackSegment] = []
+            for provider in providers {
+                let value = Double(day.tokens(for: provider))
+                if value > 0 {
+                    segments.append(StackSegment(id: provider.rawValue + "-" + String(day.date.timeIntervalSinceReferenceDate), start: bounds.start, end: bounds.end, provider: provider, y0: base, y1: base + value))
+                }
+                base += value
+            }
+            return segments
+        }
+    }
+    private func barBounds(_ start: Date, gap: Double) -> (start: Date, end: Date) {
+        let next = calendar.date(byAdding: .minute, value: interval.minutes, to: start) ?? start.addingTimeInterval(Double(interval.minutes) * 60)
+        let span = max(1, next.timeIntervalSince(start))
+        let inset = span * gap / 2
+        return (start.addingTimeInterval(inset), start.addingTimeInterval(span - inset))
+    }
+    private var axisFormat: Date.FormatStyle {
+        let span = (days.last?.date ?? Date()).timeIntervalSince(days.first?.date ?? Date())
+        if interval == .day { return days.count <= 7 ? .dateTime.weekday(.abbreviated) : .dateTime.day() }
+        if span > 26 * 3_600 { return span <= 8 * 86_400 ? .dateTime.weekday(.abbreviated) : .dateTime.day() }
+        return .dateTime.hour()
+    }
+    private var tooltipFormat: Date.FormatStyle {
+        if interval == .day { return .dateTime.month(.abbreviated).day() }
+        return singleDay ? .dateTime.hour().minute() : .dateTime.month(.abbreviated).day().hour().minute()
+    }
+}
+
+enum HeatmapLayout {
+    static let tile: CGFloat = 22
+    static let minGap: CGFloat = 5
+    static let labelWidth: CGFloat = 12
+    static let labelGap: CGFloat = 6
+    static let bandSpacing: CGFloat = 24
+    static let statsWidth: CGFloat = 108
+    /// Card interior on the fixed dashboard: window padding, then the card’s own padding.
+    static var columnWidth: CGFloat { DashboardLayout.width - 48 - 36 - labelWidth - labelGap - bandSpacing - 1 - bandSpacing - statsWidth }
+    static var weeks: Int { max(1, Int((columnWidth + minGap) / (tile + minGap))) }
+    static var columnGap: CGFloat {
+        let weeks = weeks
+        guard weeks > 1 else { return minGap }
+        return (columnWidth - CGFloat(weeks) * tile) / CGFloat(weeks - 1)
+    }
+    /// Days from the Monday of the first visible week through today.
+    static func historyDayCount(now: Date = Date(), calendar: Calendar = .current) -> Int {
+        let today = calendar.startOfDay(for: now)
+        let sinceMonday = (calendar.component(.weekday, from: today) + 5) % 7
+        return (weeks - 1) * 7 + sinceMonday + 1
     }
 }
 
@@ -126,46 +236,52 @@ struct ActivityHeatmap: View {
     @State private var hoveredDay: Date?
     private let calendar = Calendar.current
     private var dates: [Date?] {
-        guard let first = data.days.first?.date, let last = data.days.last?.date else { return [] }
-        let padding = (calendar.component(.weekday, from: first) + 5) % 7 // Monday first.
-        var result = Array<Date?>(repeating: nil, count: padding) + data.days.map { Optional($0.date) }
-        while result.count % 7 != 0 { result.append(nil) }
-        return result.map { date in date.flatMap { $0 <= last ? $0 : nil } }
+        let weeks = HeatmapLayout.weeks
+        let today = calendar.startOfDay(for: Date())
+        let sinceMonday = (calendar.component(.weekday, from: today) + 5) % 7
+        guard let monday = calendar.date(byAdding: .day, value: -sinceMonday, to: today),
+              let start = calendar.date(byAdding: .day, value: -(weeks - 1) * 7, to: monday) else { return [] }
+        return (0..<(weeks * 7)).map { offset in
+            guard let date = calendar.date(byAdding: .day, value: offset, to: start), date <= today else { return nil }
+            return date
+        }
     }
     var body: some View {
         let lookup = Dictionary(uniqueKeysWithValues: data.days.map { ($0.date, $0) })
         let values = dates
         let peak = data.peak
-        let focus = hoveredDay ?? selectedDay ?? data.days.last?.date
+        let focus = hoveredDay ?? selectedDay ?? calendar.startOfDay(for: Date())
         return VStack(alignment: .leading, spacing: 17) {
             HStack {
                 eyebrow("THE DAILY COMMITMENT")
                 Spacer()
-                Text("12 WEEKS OF AI ACTIVITY").font(.system(size: 8, weight: .medium)).tracking(0.7).foregroundStyle(Theme.muted)
+                Text("\(HeatmapLayout.weeks) WEEKS OF AI ACTIVITY").font(.system(size: 8, weight: .medium)).tracking(0.7).foregroundStyle(Theme.muted)
             }
-            HStack(alignment: .center, spacing: 24) {
-              HStack(alignment: .top, spacing: 6) {
+            HStack(alignment: .center, spacing: HeatmapLayout.bandSpacing) {
+              HStack(alignment: .top, spacing: HeatmapLayout.labelGap) {
                 VStack(spacing: 5) {
                     Color.clear.frame(height: 14)
-                    ForEach(0..<7) { index in Text(["M", "", "W", "", "F", "", ""][index]).font(.system(size: 8)).foregroundStyle(Theme.muted).frame(width: 12, height: 22) }
+                    ForEach(0..<7) { index in Text(["M", "", "W", "", "F", "", ""][index]).font(.system(size: 8)).foregroundStyle(Theme.muted).frame(width: HeatmapLayout.labelWidth, height: HeatmapLayout.tile) }
                 }
-                ForEach(0..<(values.count / 7), id: \.self) { week in
-                    VStack(spacing: 5) {
-                        Text(monthLabel(week: week, dates: values)).font(.system(size: 8)).foregroundStyle(Theme.muted).frame(height: 14)
-                        ForEach(0..<7) { weekday in
-                            let date = values[week * 7 + weekday]
-                            let count = date.map { lookup[$0]?.responses ?? 0 } ?? 0
-                            Button { selectedDay = date } label: {
-                                RoundedRectangle(cornerRadius: 3)
-                                    .fill(date == nil ? .clear : count == 0 ? Theme.text.opacity(0.055) : Theme.mint.opacity(0.22 + 0.78 * sqrt(Double(count) / Double(peak))))
-                                    .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(date != nil && date == focus ? Theme.mint : .clear, lineWidth: 1.5))
-                                    .frame(height: 22)
-                            }.disabled(date == nil).onHover { hovered in
-                                if hovered { if hoveredDay != date { hoveredDay = date } }
-                                else if hoveredDay == date { hoveredDay = nil }
-                            }.accessibilityLabel(date.flatMap { lookup[$0]?.accessibilityLabel } ?? "Outside history")
-                        }
-                    }.frame(width: 22)
+                HStack(alignment: .top, spacing: HeatmapLayout.columnGap) {
+                    ForEach(0..<(values.count / 7), id: \.self) { week in
+                        VStack(spacing: 5) {
+                            Text(monthLabel(week: week, dates: values)).font(.system(size: 8)).foregroundStyle(Theme.muted).frame(height: 14)
+                            ForEach(0..<7) { weekday in
+                                let date = values[week * 7 + weekday]
+                                let count = date.map { lookup[$0]?.responses ?? 0 } ?? 0
+                                Button { selectedDay = date } label: {
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .fill(date == nil ? .clear : count == 0 ? Theme.text.opacity(0.055) : Theme.mint.opacity(0.22 + 0.78 * sqrt(Double(count) / Double(peak))))
+                                        .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(date != nil && date == focus ? Theme.mint : .clear, lineWidth: 1.5))
+                                        .frame(width: HeatmapLayout.tile, height: HeatmapLayout.tile)
+                                }.disabled(date == nil).onHover { hovered in
+                                    if hovered { if hoveredDay != date { hoveredDay = date } }
+                                    else if hoveredDay == date { hoveredDay = nil }
+                                }.accessibilityLabel(date.flatMap { lookup[$0]?.accessibilityLabel } ?? "Outside history")
+                            }
+                        }.frame(width: HeatmapLayout.tile)
+                    }
                 }
             }
               Rectangle().fill(Theme.line).frame(width: 1, height: 170)
@@ -173,15 +289,13 @@ struct ActivityHeatmap: View {
                   cadenceMetric("CURRENT STREAK", value: data.summary.currentStreak, unit: "days")
                   cadenceMetric("BEST STREAK", value: data.summary.bestStreak, unit: "days")
                   cadenceMetric("ACTIVE DAYS", value: data.summary.activeDays, unit: "of \(data.days.count)")
-              }.frame(maxWidth: .infinity, alignment: .leading)
+              }.frame(width: HeatmapLayout.statsWidth, alignment: .leading)
             }
             HStack(spacing: 5) {
-                if let focus {
-                    Text(focus, format: .dateTime.month(.abbreviated).day()).foregroundStyle(Theme.text)
-                    Text("· \(lookup[focus]?.responses ?? 0) responses").foregroundStyle(Theme.muted)
-                    if let day = data.days.first(where: { $0.date == focus }) {
-                        Text("· " + Format.compact(day.tokens) + " tokens").foregroundStyle(Theme.muted)
-                    }
+                Text(focus, format: .dateTime.month(.abbreviated).day()).foregroundStyle(Theme.text)
+                Text("· \(lookup[focus]?.responses ?? 0) responses").foregroundStyle(Theme.muted)
+                if let day = data.days.first(where: { $0.date == focus }) {
+                    Text("· " + Format.compact(day.tokens) + " tokens").foregroundStyle(Theme.muted)
                 }
                 Spacer()
                 Text("Less").foregroundStyle(Theme.muted)
@@ -228,7 +342,7 @@ struct CostsDashboard: View {
                 HStack(alignment: .top, spacing: 12) {
                     ForEach(store.providers) { provider in providerCost(provider) }
                 }
-                ModelCostTable(estimate: store.apiEstimate)
+                ModelCostTable(estimate: store.apiEstimate, order: $store.preferences.modelOrder)
                 VStack(alignment: .leading, spacing: 14) {
                     HStack { eyebrow("THE ASSUMPTIONS"); Spacer(); Button("Edit rates ↗") { store.settingsSection = .pricing; store.openSettings() }.font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.mint) }
                     Text("Recorded models uses the model on each response, including switches within a session. Single benchmark applies your selected rates to all tokens. Unknown models remain unpriced in recorded mode. Estimates use standard short-context rates and exclude tools, long-context premiums, service tiers, regional multipliers, and tax.").font(.system(size: 11)).foregroundStyle(Theme.muted).lineSpacing(4)
@@ -286,11 +400,26 @@ struct CostsDashboard: View {
 
 struct ModelCostTable: View {
     let estimate: PriceEstimate
+    @Binding var order: ModelOrder
+    private var rows: [ModelCost] { estimate.ordered(by: order) }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack { eyebrow("MODEL BREAKDOWN"); Spacer(); Text("TOKENS").frame(width: 90, alignment: .trailing); Text("API VALUE").frame(width: 90, alignment: .trailing) }.font(.system(size: 9, weight: .medium)).foregroundStyle(Theme.muted)
-            if estimate.rows.isEmpty { Text("Model usage appears here as local responses are recorded.").font(.system(size: 11)).foregroundStyle(Theme.muted) }
-            ForEach(estimate.rows) { row in
+            HStack {
+                eyebrow("MODEL BREAKDOWN")
+                Spacer()
+                Menu {
+                    Picker("Order", selection: $order) {
+                        ForEach(ModelOrder.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }.pickerStyle(.inline)
+                } label: {
+                    HStack(spacing: 4) { Text("Order"); Text(order.rawValue).foregroundStyle(Theme.text); Image(systemName: "chevron.down").font(.system(size: 7)) }
+                        .font(.system(size: 10)).foregroundStyle(Theme.muted)
+                }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Order models by tokens used or by API value.").accessibilityLabel("Model order")
+                Text("TOKENS").frame(width: 90, alignment: .trailing).foregroundStyle(order == .tokens ? Theme.text : Theme.muted)
+                Text("API VALUE").frame(width: 90, alignment: .trailing).foregroundStyle(order == .apiValue ? Theme.text : Theme.muted)
+            }.font(.system(size: 9, weight: .medium)).foregroundStyle(Theme.muted)
+            if rows.isEmpty { Text("Model usage appears here as local responses are recorded.").font(.system(size: 11)).foregroundStyle(Theme.muted) }
+            ForEach(rows) { row in
                 HStack(spacing: 9) {
                     ProviderMark(provider: row.provider).frame(width: 23, height: 23)
                     Text(row.title).font(.system(size: 11, weight: .medium)).lineLimit(1).help(row.model)

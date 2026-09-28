@@ -80,6 +80,21 @@ final class ModelPricingTests: XCTestCase {
         XCTAssertEqual(raw, ["claude-fable-5": .init(input: 2000)])
         XCTAssertEqual(history.modelUsage(dayCount: 7, provider: .claude, now: now, calendar: calendar).values.reduce(0) { $0 + $1.total }, 3000)
     }
+    func testModelBreakdownOrdersByTokensOrAPIValue() {
+        let usage: [String: TokenUsage] = [
+            "claude-haiku-4-5": .init(input: 6_000_000),
+            "claude-opus-4-1": .init(output: 100_000),
+            "claude-unknown-model": .init(input: 9_000_000)
+        ]
+        let estimate = PriceEstimate(usage: usage, provider: .claude, preferences: .init())
+        XCTAssertEqual(estimate.ordered(by: .apiValue).map(\.model), ["claude-opus-4-1", "claude-haiku-4-5", "claude-unknown-model"])
+        XCTAssertEqual(estimate.ordered(by: .tokens).map(\.model), ["claude-unknown-model", "claude-haiku-4-5", "claude-opus-4-1"])
+        let tied = PriceEstimate(usage: ["b-model": .init(input: 10), "a-model": .init(input: 10)], provider: .claude, preferences: .init())
+        XCTAssertEqual(tied.ordered(by: .tokens).map(\.model), ["a-model", "b-model"])
+        let claude = PriceEstimate(usage: ["claude-haiku-4-5": .init(input: 1_000)], provider: .claude, preferences: .init())
+        let codex = PriceEstimate(usage: ["gpt-5.6-luna": .init(input: 50_000)], provider: .codex, preferences: .init())
+        XCTAssertEqual((claude + codex).ordered(by: .tokens).map(\.provider), [.codex, .claude])
+    }
     func testPartialModelMapsPreserveUnattributedTokensAndCacheDuration() {
         let partition = ModelPricing.partition(.init(input: 1000, output: 200), reported: ["grok-4.6": .init(input: 400, output: 100)])
         XCTAssertEqual(partition[ModelPricing.unknown], .init(input: 600, output: 100))

@@ -124,7 +124,7 @@ struct SettingsContent: View {
                 settingToggle("Current or last session", subtitle: "Project, model, state, tokens, and responses.", binding: $store.preferences.showCurrentSession)
                 settingToggle("API equivalent", subtitle: "Optional token cost estimate and API Value tab.", binding: $store.preferences.showCosts)
                 settingToggle("Daily activity grid", subtitle: "Twelve weeks of AI activity and your streaks.", binding: $store.preferences.showHeatmap)
-                settingToggle("Playful daily message", subtitle: "A little personality, based on your activity.", binding: $store.preferences.playfulCadence)
+                settingToggle("Playful daily message", subtitle: "Funny, blunt, or encouraging. It follows today’s pace, streak, and quotas.", binding: $store.preferences.playfulCadence)
                 settingToggle("Detailed statistics", subtitle: "Sessions, responses, cache share, and lifetime usage.", binding: $store.preferences.showBreakdown)
             }
             section("LIMIT DETAILS") {
@@ -140,7 +140,7 @@ struct SettingsContent: View {
                 HStack { Text("Overview").font(.system(size: 12, weight: .medium)); Spacer(); Text("Always today").font(.system(size: 11)).foregroundStyle(Theme.mint) }
                 option("Activity totals", subtitle: "Only changes statistics on the Activity tab.", selection: $store.preferences.tokenPeriod)
                 option("API Value totals", subtitle: "Only changes the API cost estimate tab.", selection: $store.preferences.apiTokenPeriod)
-                option("Activity chart", subtitle: "The number of days in the line chart.", selection: $store.preferences.chartPeriod)
+                option("Activity chart", subtitle: "Days on the Activity chart. Line, histogram, and bucket size are chosen on the chart.", selection: $store.preferences.chartPeriod)
                 option("Other quota windows", subtitle: "Primary cards always show each provider’s chosen window.", selection: $store.preferences.visibleWindows)
             }
             section("MENU BAR") {
@@ -149,7 +149,7 @@ struct SettingsContent: View {
                     option(provider.title + " token period", subtitle: "Used for this provider’s menu bar token count.", selection: store.tokenBinding(for: provider))
                 }
             }
-            note("The activity grid covers up to 84 days; totals and charts cover up to 30. Today and date boundaries use your Mac’s time zone. Subscription windows are defined by each provider.", icon: "calendar")
+            note("The activity grid covers up to 84 days; totals and charts cover up to 30. Overview is always today. Charts switch between a line and a histogram, with buckets such as 15 minutes, hourly, or daily. Today and date boundaries use your Mac’s time zone. Subscription windows are defined by each provider.", icon: "calendar")
             MenuBarPreview(store: store)
         }
     }
