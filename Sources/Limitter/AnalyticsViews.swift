@@ -207,52 +207,81 @@ struct TokenChart: View {
     }
 }
 
+enum HeatmapLayout {
+    static let tile: CGFloat = 22
+    static let minGap: CGFloat = 5
+    static let labelWidth: CGFloat = 12
+    static let labelGap: CGFloat = 6
+    static let bandSpacing: CGFloat = 24
+    static let statsWidth: CGFloat = 108
+    /// Card interior on the fixed dashboard: window padding, then the card’s own padding.
+    static var columnWidth: CGFloat { DashboardLayout.width - 48 - 36 - labelWidth - labelGap - bandSpacing - 1 - bandSpacing - statsWidth }
+    static var weeks: Int { max(1, Int((columnWidth + minGap) / (tile + minGap))) }
+    static var columnGap: CGFloat {
+        let weeks = weeks
+        guard weeks > 1 else { return minGap }
+        return (columnWidth - CGFloat(weeks) * tile) / CGFloat(weeks - 1)
+    }
+    /// Days from the Monday of the first visible week through today.
+    static func historyDayCount(now: Date = Date(), calendar: Calendar = .current) -> Int {
+        let today = calendar.startOfDay(for: now)
+        let sinceMonday = (calendar.component(.weekday, from: today) + 5) % 7
+        return (weeks - 1) * 7 + sinceMonday + 1
+    }
+}
+
 struct ActivityHeatmap: View {
     let data: HeatmapData
     @State private var selectedDay: Date?
     @State private var hoveredDay: Date?
     private let calendar = Calendar.current
     private var dates: [Date?] {
-        guard let first = data.days.first?.date, let last = data.days.last?.date else { return [] }
-        let padding = (calendar.component(.weekday, from: first) + 5) % 7 // Monday first.
-        var result = Array<Date?>(repeating: nil, count: padding) + data.days.map { Optional($0.date) }
-        while result.count % 7 != 0 { result.append(nil) }
-        return result.map { date in date.flatMap { $0 <= last ? $0 : nil } }
+        let weeks = HeatmapLayout.weeks
+        let today = calendar.startOfDay(for: Date())
+        let sinceMonday = (calendar.component(.weekday, from: today) + 5) % 7
+        guard let monday = calendar.date(byAdding: .day, value: -sinceMonday, to: today),
+              let start = calendar.date(byAdding: .day, value: -(weeks - 1) * 7, to: monday) else { return [] }
+        return (0..<(weeks * 7)).map { offset in
+            guard let date = calendar.date(byAdding: .day, value: offset, to: start), date <= today else { return nil }
+            return date
+        }
     }
     var body: some View {
         let lookup = Dictionary(uniqueKeysWithValues: data.days.map { ($0.date, $0) })
         let values = dates
         let peak = data.peak
-        let focus = hoveredDay ?? selectedDay ?? data.days.last?.date
+        let focus = hoveredDay ?? selectedDay ?? calendar.startOfDay(for: Date())
         return VStack(alignment: .leading, spacing: 17) {
             HStack {
                 eyebrow("THE DAILY COMMITMENT")
                 Spacer()
-                Text("12 WEEKS OF AI ACTIVITY").font(.system(size: 8, weight: .medium)).tracking(0.7).foregroundStyle(Theme.muted)
+                Text("\(HeatmapLayout.weeks) WEEKS OF AI ACTIVITY").font(.system(size: 8, weight: .medium)).tracking(0.7).foregroundStyle(Theme.muted)
             }
-            HStack(alignment: .center, spacing: 24) {
-              HStack(alignment: .top, spacing: 6) {
+            HStack(alignment: .center, spacing: HeatmapLayout.bandSpacing) {
+              HStack(alignment: .top, spacing: HeatmapLayout.labelGap) {
                 VStack(spacing: 5) {
                     Color.clear.frame(height: 14)
-                    ForEach(0..<7) { index in Text(["M", "", "W", "", "F", "", ""][index]).font(.system(size: 8)).foregroundStyle(Theme.muted).frame(width: 12, height: 22) }
+                    ForEach(0..<7) { index in Text(["M", "", "W", "", "F", "", ""][index]).font(.system(size: 8)).foregroundStyle(Theme.muted).frame(width: HeatmapLayout.labelWidth, height: HeatmapLayout.tile) }
                 }
-                ForEach(0..<(values.count / 7), id: \.self) { week in
-                    VStack(spacing: 5) {
-                        Text(monthLabel(week: week, dates: values)).font(.system(size: 8)).foregroundStyle(Theme.muted).frame(height: 14)
-                        ForEach(0..<7) { weekday in
-                            let date = values[week * 7 + weekday]
-                            let count = date.map { lookup[$0]?.responses ?? 0 } ?? 0
-                            Button { selectedDay = date } label: {
-                                RoundedRectangle(cornerRadius: 3)
-                                    .fill(date == nil ? .clear : count == 0 ? Theme.text.opacity(0.055) : Theme.mint.opacity(0.22 + 0.78 * sqrt(Double(count) / Double(peak))))
-                                    .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(date != nil && date == focus ? Theme.mint : .clear, lineWidth: 1.5))
-                                    .frame(height: 22)
-                            }.disabled(date == nil).onHover { hovered in
-                                if hovered { if hoveredDay != date { hoveredDay = date } }
-                                else if hoveredDay == date { hoveredDay = nil }
-                            }.accessibilityLabel(date.flatMap { lookup[$0]?.accessibilityLabel } ?? "Outside history")
-                        }
-                    }.frame(width: 22)
+                HStack(alignment: .top, spacing: HeatmapLayout.columnGap) {
+                    ForEach(0..<(values.count / 7), id: \.self) { week in
+                        VStack(spacing: 5) {
+                            Text(monthLabel(week: week, dates: values)).font(.system(size: 8)).foregroundStyle(Theme.muted).frame(height: 14)
+                            ForEach(0..<7) { weekday in
+                                let date = values[week * 7 + weekday]
+                                let count = date.map { lookup[$0]?.responses ?? 0 } ?? 0
+                                Button { selectedDay = date } label: {
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .fill(date == nil ? .clear : count == 0 ? Theme.text.opacity(0.055) : Theme.mint.opacity(0.22 + 0.78 * sqrt(Double(count) / Double(peak))))
+                                        .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(date != nil && date == focus ? Theme.mint : .clear, lineWidth: 1.5))
+                                        .frame(width: HeatmapLayout.tile, height: HeatmapLayout.tile)
+                                }.disabled(date == nil).onHover { hovered in
+                                    if hovered { if hoveredDay != date { hoveredDay = date } }
+                                    else if hoveredDay == date { hoveredDay = nil }
+                                }.accessibilityLabel(date.flatMap { lookup[$0]?.accessibilityLabel } ?? "Outside history")
+                            }
+                        }.frame(width: HeatmapLayout.tile)
+                    }
                 }
             }
               Rectangle().fill(Theme.line).frame(width: 1, height: 170)
@@ -260,15 +289,13 @@ struct ActivityHeatmap: View {
                   cadenceMetric("CURRENT STREAK", value: data.summary.currentStreak, unit: "days")
                   cadenceMetric("BEST STREAK", value: data.summary.bestStreak, unit: "days")
                   cadenceMetric("ACTIVE DAYS", value: data.summary.activeDays, unit: "of \(data.days.count)")
-              }.frame(maxWidth: .infinity, alignment: .leading)
+              }.frame(width: HeatmapLayout.statsWidth, alignment: .leading)
             }
             HStack(spacing: 5) {
-                if let focus {
-                    Text(focus, format: .dateTime.month(.abbreviated).day()).foregroundStyle(Theme.text)
-                    Text("· \(lookup[focus]?.responses ?? 0) responses").foregroundStyle(Theme.muted)
-                    if let day = data.days.first(where: { $0.date == focus }) {
-                        Text("· " + Format.compact(day.tokens) + " tokens").foregroundStyle(Theme.muted)
-                    }
+                Text(focus, format: .dateTime.month(.abbreviated).day()).foregroundStyle(Theme.text)
+                Text("· \(lookup[focus]?.responses ?? 0) responses").foregroundStyle(Theme.muted)
+                if let day = data.days.first(where: { $0.date == focus }) {
+                    Text("· " + Format.compact(day.tokens) + " tokens").foregroundStyle(Theme.muted)
                 }
                 Spacer()
                 Text("Less").foregroundStyle(Theme.muted)

@@ -31,7 +31,7 @@ dist/Limitter.app/Contents/MacOS/Limitter --diagnose-grok
 
 ## UI checks and previews
 
-`--verify-ui` checks native settings-window launch, close, and reopen behavior; live appearance changes; the actual status-button readout; icon fallback; provider filtering; independent Codex/Claude/Grok and Activity/API Value timeframes; today-only Overview totals; line and histogram buckets on Overview and Activity; API Value model ordering; the daily note; current-session selection; API estimates; and 84-day history. It uses sample data and does not save preferences. It does not simulate physical mouse movement or menu selection.
+`--verify-ui` checks native settings-window launch, close, and reopen behavior; live appearance changes; the actual status-button readout; icon fallback; provider filtering; independent Codex/Claude/Grok and Activity/API Value timeframes; today-only Overview totals; line and histogram buckets on Overview and Activity; API Value model ordering; the daily note; current-session selection; API estimates; and the history needed for the full-width activity grid. It uses sample data and does not save preferences. It does not simulate physical mouse movement or menu selection.
 
 ```sh
 dist/Limitter.app/Contents/MacOS/Limitter --verify-ui
@@ -69,8 +69,9 @@ The build script compiles for the host architecture and signs the bundle ad hoc.
 It does not produce a universal, Developer ID-signed, or notarized release. Keep
 build outputs, connector backups, and local diagnostic artifacts out of Git.
 
-To regenerate the README screenshot using sample data:
+To regenerate the README screenshots using sample data:
 
 ```sh
 dist/Limitter.app/Contents/MacOS/Limitter --render-preview "$PWD/docs/images/overview.png" --preview-mixed
+dist/Limitter.app/Contents/MacOS/Limitter --render-preview "$PWD/docs/images/activity.png" --preview-activity
 ```
