@@ -154,9 +154,9 @@ struct SettingsContent: View {
         }
     }
     private var priceStatus: String {
-        if let error = store.priceError { return error + (store.prices.fetchedAt == nil ? " Using built-in rates." : " Using the last downloaded rates.") }
+        if let error = store.priceError { return error + (store.prices.fetchedAt == nil ? " Using built-in rates." : " Previously known rates remain available.") }
         guard let fetched = store.prices.fetchedAt else { return "Using built-in rates. Live prices download automatically." }
-        return "Live rates for \(store.prices.modelCount) models from \(store.prices.sources.joined(separator: " and ")), updated \(fetched.formatted(.relative(presentation: .named))). Checked daily."
+        return "Live rates for \(store.prices.modelCount) models from \(store.prices.sources.joined(separator: " and ")), updated \(fetched.formatted(.relative(presentation: .named))). Checked daily and when an unpriced model appears. Missing prices retry every 15 minutes."
     }
     private var pricing: some View {
         VStack(alignment: .leading, spacing: 22) {

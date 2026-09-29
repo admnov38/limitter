@@ -15,7 +15,7 @@ Built with SwiftUI, AppKit, and Swift Charts, with no third-party package depend
 - **Local activity:** token lines or stacked histograms with adjustable time buckets, recent sessions, and per-model usage across available local logs.
 - **Daily commitment:** a 21-week activity grid fills the card with fixed-size square tiles, alongside current streak, best streak, and active-day counts. Hover or select a day to inspect responses and tokens.
 - **Daily notes:** optional playful messages reflect today’s activity, quota state, and streak; a factual mode is also available.
-- **API cost estimates:** estimate the USD API equivalent of recorded tokens, with a model breakdown you can sort by tokens or API value, and an optional custom benchmark.
+- **API cost estimates:** estimate the USD API equivalent of recorded tokens, with a model breakdown you can sort by tokens or API value, and an optional custom benchmark. Newly used models trigger a pricing refresh automatically; missing rates retry every 15 minutes until published.
 - **Native controls:** dark, light, or system appearance; a pinnable dashboard; and launch at login.
 - **Explicit data states:** unavailable and expired readings stay visible as such; stale Claude fallback readings are marked as last known.
 
@@ -136,6 +136,6 @@ screenshot generation, and release checks.
 
 ## Project status
 
-The current source release is **1.4.2**. Limitter is an independent project and is
+The current source release is **1.4.3**. Limitter is an independent project and is
 not affiliated with OpenAI, Anthropic, or xAI. Provider compatibility depends on
 the installed CLI version and the account data it exposes.

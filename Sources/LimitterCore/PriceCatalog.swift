@@ -5,6 +5,8 @@ public struct PriceSnapshot: Codable, Equatable, Sendable {
     public var fetchedAt: Date?
     public var sources: [String] = []
     public var rates: [Provider: [String: APIRates]] = [:]
+    /// Optional for compatibility with caches written before source health was recorded.
+    public var failedSources: [String]?
     public init(fetchedAt: Date? = nil, sources: [String] = [], rates: [Provider: [String: APIRates]] = [:]) {
         self.fetchedAt = fetchedAt; self.sources = sources; self.rates = rates
     }
@@ -18,6 +20,7 @@ public struct PriceSnapshot: Codable, Equatable, Sendable {
         for (provider, models) in other.rates { result.rates[provider, default: [:]].merge(models) { _, new in new } }
         result.sources += other.sources.filter { !result.sources.contains($0) }
         result.fetchedAt = [fetchedAt, other.fetchedAt].compactMap { $0 }.max()
+        result.failedSources = other.failedSources
         return result
     }
 }
@@ -30,6 +33,25 @@ public final class PriceCatalog: @unchecked Sendable {
     public var current: PriceSnapshot { lock.withLock { snapshot } }
     public func install(_ value: PriceSnapshot) { lock.withLock { snapshot = value } }
     func rates(provider: Provider, key: String) -> APIRates? { lock.withLock { snapshot.rates[provider]?[key] } }
+}
+
+/// Refresh on discovery, without hammering sources when a model is not published yet.
+public struct PriceRefreshPolicy: Sendable {
+    public private(set) var lastAttempt: Date?
+    private var attemptedModels = Set<String>()
+    private var lastAttemptFailed = false
+    public init() {}
+    public mutating func finish(succeeded: Bool) { lastAttemptFailed = !succeeded }
+
+    public mutating func begin(snapshot: PriceSnapshot, missingModels: Set<String>, now: Date = Date(), force: Bool = false) -> Bool {
+        let elapsed = lastAttempt.map { now.timeIntervalSince($0) } ?? .infinity
+        let discoveredModel = !missingModels.subtracting(attemptedModels).isEmpty
+        let needsRetry = lastAttemptFailed || !missingModels.isEmpty || !(snapshot.failedSources ?? []).isEmpty || snapshot.isStale(now: now)
+        guard force || (elapsed >= 60 && (discoveredModel || (needsRetry && elapsed >= 900))) else { return false }
+        lastAttempt = now
+        attemptedModels.formUnion(missingModels)
+        return true
+    }
 }
 
 public enum PriceSources {
@@ -63,7 +85,7 @@ public enum PriceSources {
             func price(_ key: String) -> Double? { columns[key].flatMap { $0 < cells.count ? dollars(cells[$0]) : nil } }
             guard let input = price("input"), let output = price("output"), let read = price("read"), let write = price("write") else { continue }
             let rates = APIRates(name: name, input: input, output: output, cacheRead: read, cacheWrite: write, cacheWriteHour: price("hour"))
-            result[ModelPricing.key(for: name, provider: .claude)] = rates
+            if rates.isValid { result[ModelPricing.key(for: name, provider: .claude)] = rates }
         }
         return result
     }
@@ -94,8 +116,8 @@ public enum PriceSources {
 
     /// Downloads both sources. Anthropic's own table takes precedence for Claude.
     public static func fetch(session: URLSession = .shared, now: Date = Date()) async throws -> PriceSnapshot {
-        async let anthropicData = try? session.data(from: anthropic)
-        async let litellmData = try? session.data(from: litellm)
+        async let anthropicData = try? session.data(for: request(anthropic))
+        async let litellmData = try? session.data(for: request(litellm))
         var snapshot = PriceSnapshot()
         if let (data, response) = await litellmData, (response as? HTTPURLResponse)?.statusCode == 200 {
             let rates = parseLiteLLM(data)
@@ -105,8 +127,15 @@ public enum PriceSources {
             let rates = parseAnthropic(String(decoding: data, as: UTF8.self))
             if !rates.isEmpty { snapshot = snapshot.merging(.init(fetchedAt: now, sources: ["Anthropic"], rates: [.claude: rates])) }
         }
+        snapshot.failedSources = ["LiteLLM", "Anthropic"].filter { !snapshot.sources.contains($0) }
         guard snapshot.modelCount > 0 else { throw URLError(.cannotParseResponse) }
         return snapshot
+    }
+
+    private static func request(_ url: URL) -> URLRequest {
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        return request
     }
 
     public static func loadCache(from url: URL = cacheURL) -> PriceSnapshot? {
@@ -118,7 +147,8 @@ public enum PriceSources {
     }
 
     private static func modelName(_ cell: String) -> String? {
-        var name = cell.replacingOccurrences(of: #"<[^>]+>"#, with: "", options: .regularExpression)
+        var name = cell.replacingOccurrences(of: #"\[([^\]]+)\]\([^\)]+\)"#, with: "$1", options: .regularExpression)
+            .replacingOccurrences(of: #"<[^>]+>"#, with: "", options: .regularExpression)
         if let cut = name.range(of: #"\s*[\(\[]"#, options: .regularExpression) { name = String(name[..<cut.lowerBound]) }
         name = name.replacingOccurrences(of: "*", with: "").trimmingCharacters(in: .whitespaces)
         return name.isEmpty ? nil : name

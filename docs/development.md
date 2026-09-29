@@ -86,14 +86,14 @@ token; no separate publishing secret is needed.
 
 To prepare a release, update both bundle version fields in `Resources/Info.plist`,
 the README version, and `docs/release-notes.md`. Commit and push those changes to
-`main`, then create and push a matching tag (for example `v1.4.2`). A mismatched
+`main`, then create and push a matching tag (for example `v1.4.3`). A mismatched
 tag and bundle version fails packaging. To retry a failed workflow before any
 release was published, use GitHub Actions' rerun control.
 
 To build and inspect the same archive locally:
 
 ```sh
-./scripts/package-release.sh v1.4.2
+./scripts/package-release.sh v1.4.3
 ```
 
 The output is `dist/Limitter-macOS-universal.zip`. The packaged app records the

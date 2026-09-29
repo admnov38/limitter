@@ -31,7 +31,7 @@ final class UsageStore: ObservableObject {
     private var claudeSignature = ""
     private var claudeAccount: ProviderLimits?
     private var lastAccountRefresh = Date.distantPast
-    private var nextPriceAttempt = Date.distantPast
+    private var priceRefreshPolicy = PriceRefreshPolicy()
     enum Page: String, CaseIterable { case overview = "Overview", activity = "Activity", costs = "API Value" }
     enum SettingsSection: String, CaseIterable, Identifiable {
         case appearance = "Appearance", menuBar = "Menu Bar", display = "Display", timeframes = "Timeframes", general = "General", pricing = "API Pricing", connections = "Connections"
@@ -91,6 +91,7 @@ final class UsageStore: ObservableObject {
     }
     func refresh(force: Bool = false) {
         refreshClaude(force: force)
+        if force { updatePrices(force: true) }
         guard !refreshing, !demo else { return }
         refreshing = true
         let fetchAccount = force || Date().timeIntervalSince(lastAccountRefresh) >= 120
@@ -130,23 +131,28 @@ final class UsageStore: ObservableObject {
             let loaded = await newHistory
             heatmaps = await Task.detached(priority: .utility) { Self.makeHeatmaps(loaded) }.value
             history = loaded
+            updatePrices()
             refreshClaude(force: true)
             lastRefresh = Date(); refreshing = false
         }
     }
-    /// Pulls current model rates at most once a day unless forced; cached rates stay in use on failure.
+    /// Daily updates plus discovery-triggered refreshes and bounded retries for missing rates.
     func updatePrices(force: Bool = false) {
-        guard !demo, !updatingPrices, force || (prices.isStale() && Date() >= nextPriceAttempt) else { return }
+        guard !demo, !updatingPrices else { return }
+        guard priceRefreshPolicy.begin(snapshot: prices, missingModels: history.unpricedModels(), force: force) else { return }
         updatingPrices = true
-        nextPriceAttempt = Date().addingTimeInterval(3_600)
         Task {
             do {
                 let fetched = try await PriceSources.fetch()
-                installPrices(fetched)
-                try? PriceSources.saveCache(fetched)
-                priceError = nil
+                let combined = prices.merging(fetched)
+                installPrices(combined)
+                try? PriceSources.saveCache(combined)
+                let failed = fetched.failedSources ?? []
+                priceError = failed.isEmpty ? nil : "Couldn’t refresh " + failed.joined(separator: " and ") + ". Retrying automatically."
+                priceRefreshPolicy.finish(succeeded: true)
             } catch {
                 priceError = "Couldn’t update prices: " + error.localizedDescription
+                priceRefreshPolicy.finish(succeeded: false)
             }
             updatingPrices = false
         }

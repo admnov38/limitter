@@ -13,6 +13,9 @@ public enum ModelPricing {
     /// Lookup key shared by transcript model IDs, preset names, and fetched price lists.
     public static func key(for model: String, provider: Provider) -> String {
         var id = normalizedID(model).replacingOccurrences(of: " ", with: "-")
+        let namespace: String
+        switch provider { case .codex: namespace = "openai/"; case .claude: namespace = "anthropic/"; case .grok: namespace = "xai/" }
+        if id.hasPrefix(namespace) { id = String(id.dropFirst(namespace.count)) }
         if provider == .claude { id = id.replacingOccurrences(of: ".", with: "-") }
         if provider == .grok && id.hasSuffix("-build") { id = String(id.dropLast(6)) }
         return id
@@ -107,6 +110,19 @@ extension CostBreakdown {
 }
 
 extension HistorySnapshot {
+    /// Model identifiers only; no transcripts or usage data are sent to pricing sources.
+    public func unpricedModels(catalog: PriceCatalog = .shared, now: Date = Date(), calendar: Calendar = .current) -> Set<String> {
+        var result = Set<String>()
+        for provider in Provider.allCases {
+            for (model, usage) in modelUsage(dayCount: 30, provider: provider, now: now, calendar: calendar) where usage.total > 0 {
+                guard !model.isEmpty, model != ModelPricing.unknown,
+                      ModelPricing.rates(for: model, provider: provider, catalog: catalog) == nil else { continue }
+                result.insert(provider.rawValue + ":" + ModelPricing.key(for: model, provider: provider))
+            }
+        }
+        return result
+    }
+
     public func modelUsage(dayCount: Int, provider: Provider, now: Date = Date(), calendar: Calendar = .current) -> [String: TokenUsage] {
         let start = calendar.date(byAdding: .day, value: 1 - max(1, dayCount), to: calendar.startOfDay(for: now))!
         var result: [String: TokenUsage] = [:]
