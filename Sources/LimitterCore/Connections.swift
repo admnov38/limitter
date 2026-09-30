@@ -54,12 +54,23 @@ public enum ConnectionError: LocalizedError {
 public final class CodexConnection: @unchecked Sendable {
     public init() {}
     public static func executable() -> URL? {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let candidates = ["/Applications/Codex.app/Contents/Resources/codex", "/Applications/ChatGPT.app/Contents/Resources/codex",
-            "\(home)/Applications/Codex.app/Contents/Resources/codex", "\(home)/Applications/ChatGPT.app/Contents/Resources/codex",
-            "/opt/homebrew/bin/codex", "/usr/local/bin/codex", "\(home)/.local/bin/codex"]
-            + (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map { "\($0)/codex" }
-        return candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }).map { URL(fileURLWithPath: $0) }
+        executable(home: FileManager.default.homeDirectoryForCurrentUser,
+                   applicationDirectories: [URL(fileURLWithPath: "/Applications"), FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications")],
+                   path: ProcessInfo.processInfo.environment["PATH"] ?? "")
+    }
+    static func executable(home: URL, applicationDirectories: [URL], path: String) -> URL? {
+        // Finder-launched apps have a minimal PATH. Discover the CLI inside the desktop
+        // bundle, including the nested, signed CLI shipped by current ChatGPT/Codex.
+        let bundled = applicationDirectories.flatMap { directory in
+            ["Codex.app", "ChatGPT.app"].flatMap { app in
+                ["codex-cli/CodexCLI.app/Contents/MacOS/codex", "codex-cli/bin/codex", "codex"].map {
+                    directory.appendingPathComponent(app + "/Contents/Resources/" + $0)
+                }
+            }
+        }
+        let candidates = bundled + [URL(fileURLWithPath: "/opt/homebrew/bin/codex"), URL(fileURLWithPath: "/usr/local/bin/codex"), home.appendingPathComponent(".local/bin/codex")]
+            + path.split(separator: ":").map { URL(fileURLWithPath: String($0)).appendingPathComponent("codex") }
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
     public func fetch() throws -> ProviderLimits {
         guard let executable = Self.executable() else { throw ConnectionError.unavailable("Install Codex and sign in to connect your limits.") }

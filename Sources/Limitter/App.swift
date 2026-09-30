@@ -415,6 +415,23 @@ enum LimitterMain {
             }
             RunLoop.main.run(); return
         }
+        if CommandLine.arguments.contains("--diagnose-codex") {
+            Task {
+                do {
+                    print("Codex executable: " + (CodexConnection.executable()?.path ?? "not found"))
+                    let snapshot = try await Task.detached { try CodexConnection().fetch() }.value
+                    print("Codex account: connected · " + (snapshot.plan ?? "plan not reported"))
+                    for period in QuotaPeriod.allCases {
+                        let status = QuotaPresentation(provider: .codex, snapshot: snapshot, period: period)
+                        print(period.rawValue + ": " + status.label + (status.hasValue ? " · \(Format.percent(status.window!.usedPercent))% used" : "") + " · " + status.message)
+                    }
+                    var preferences = AppPreferences(); preferences.menuProviders = .codex
+                    print("Codex menu bar: " + MenuBarFormatter.label(preferences: preferences, readings: MenuBarFormatter.readings(preferences: preferences, limits: [.codex: snapshot], history: .init())))
+                    exit(0)
+                } catch { fputs(error.localizedDescription + "\n", stderr); exit(1) }
+            }
+            RunLoop.main.run(); return
+        }
         if CommandLine.arguments.contains("--diagnose-grok") {
             Task {
                 do {

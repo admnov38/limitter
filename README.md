@@ -136,6 +136,6 @@ screenshot generation, and release checks.
 
 ## Project status
 
-The current source release is **1.4.3**. Limitter is an independent project and is
+The current source release is **1.4.4**. Limitter is an independent project and is
 not affiliated with OpenAI, Anthropic, or xAI. Provider compatibility depends on
 the installed CLI version and the account data it exposes.

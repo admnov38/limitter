@@ -21,6 +21,7 @@ They are optional diagnostics, not prerequisites for running the test suite.
 
 ```sh
 dist/Limitter.app/Contents/MacOS/Limitter --diagnose
+dist/Limitter.app/Contents/MacOS/Limitter --diagnose-codex
 dist/Limitter.app/Contents/MacOS/Limitter --diagnose-claude
 dist/Limitter.app/Contents/MacOS/Limitter --diagnose-claude-account
 dist/Limitter.app/Contents/MacOS/Limitter --diagnose-pricing
@@ -28,6 +29,15 @@ dist/Limitter.app/Contents/MacOS/Limitter --diagnose-grok
 ```
 
 `--diagnose` prints only aggregate counts and connection status. `--diagnose-claude` reports status-line quota availability; `--diagnose-claude-account` queries live account and model limits without scanning history. `--diagnose-pricing` emits aggregate 30-day per-model token counters and USD estimates as JSON, with no message contents. Connector tests use temporary directories and leave your real Claude settings untouched. `--diagnose-grok` checks live billing and Grok’s local history. `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, and `GROK_HOME` are honored when provided to the process. `LIMITTER_DATA_DIR` overrides connector storage for testing.
+
+`--diagnose-codex` reports the selected CLI path, live account quota windows, and
+the Codex menu-bar readout without scanning history. Limitter discovers both the
+legacy desktop CLI and the nested `codex-cli/CodexCLI.app` bundle independently
+of the shell's PATH. To reproduce a Finder launch's executable discovery, run:
+
+```sh
+env PATH=/usr/bin:/bin:/usr/sbin:/sbin dist/Limitter.app/Contents/MacOS/Limitter --diagnose-codex
+```
 
 ## UI checks and previews
 
